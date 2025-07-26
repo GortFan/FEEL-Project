@@ -4,6 +4,7 @@ import math
 import pyvista as pv
 import scipy.ndimage as sp
 import random
+from multiprocessing import Process
 
 def fitness(m, c_count) -> float:
     penalty = 0
@@ -111,6 +112,32 @@ def penalize_drift_sharing(pop: np.ndarray, fitnesses: np.ndarray, sigma: float,
 def is_in_population(chromosome, population):
     return np.any(np.all(population == chromosome, axis=1))
     
+def create_ridge(m_shape, individual):
+    mc = np.ones(m_shape)
+    r = cuboid_mask(matrix=mc,
+                    base_z=0,
+                    base_y=125,
+                    base_x=125,
+                    cuboid_depth=individual[0],
+                    cuboid_height=individual[1],
+                    cuboid_width=individual[2],
+                    yaw=individual[3],
+                    pitch=individual[4],
+                    roll=individual[5],
+                    taper_width=individual[6],
+                    taper_height=individual[7])
+    mc[r] = 0
+    c = np.sum(mc == 1)
+    return fitness(mc, c)
+
+def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m_shape):
+    proc = []
+    for _ in range(num_processes):
+        p = Process(target=create_ridge, kwargs=[m_shape, ])
+    for p in proc:
+        p.join()
+        
+    
 def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutation_rate, diversity_threshold, diversity_decay_rate, sigma, alpha):
     m[0, :, :] = 0
     children_qty = pop_size - elite_size - worst_size
@@ -121,10 +148,12 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     best_raw_fitness = float('inf')
     best_chrom = None
     fitness_history = []
+    # The loop contents must be serialized because the order of chained operations must be consistent
     for generation_number in range(generation_qty):
         
         fitnesses = np.zeros(pop_size)
 
+        # The nested loop contents are independent of each other so this can be parallelized
         for i in range(pop_size):
             print(i)
             mc = m.copy()
