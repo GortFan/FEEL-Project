@@ -4,7 +4,7 @@ import math
 import pyvista as pv
 import scipy.ndimage as sp
 import random
-from multiprocessing import Process
+from multiprocessing import Process, Queue
 
 def fitness(m, c_count) -> float:
     penalty = 0
@@ -112,30 +112,51 @@ def penalize_drift_sharing(pop: np.ndarray, fitnesses: np.ndarray, sigma: float,
 def is_in_population(chromosome, population):
     return np.any(np.all(population == chromosome, axis=1))
     
-def create_ridge(m_shape, individual):
-    mc = np.ones(m_shape)
-    r = cuboid_mask(matrix=mc,
-                    base_z=0,
-                    base_y=125,
-                    base_x=125,
-                    cuboid_depth=individual[0],
-                    cuboid_height=individual[1],
-                    cuboid_width=individual[2],
-                    yaw=individual[3],
-                    pitch=individual[4],
-                    roll=individual[5],
-                    taper_width=individual[6],
-                    taper_height=individual[7])
-    mc[r] = 0
-    c = np.sum(mc == 1)
-    return fitness(mc, c)
-
+def create_ridge(m_shape, individual_batch, process_index, queue):
+    result = [None]*len(individual_batch)
+    for idx, individual in individual_batch:
+        mc = np.ones(m_shape)
+        r = cuboid_mask(matrix=mc,
+                        base_z=0,
+                        base_y=125,
+                        base_x=125,
+                        cuboid_depth=individual[0],
+                        cuboid_height=individual[1],
+                        cuboid_width=individual[2],
+                        yaw=individual[3],
+                        pitch=individual[4],
+                        roll=individual[5],
+                        taper_width=individual[6],
+                        taper_height=individual[7])
+        mc[r] = 0
+        c = np.sum(mc == 1)
+        f = fitness(mc, c)
+        result[idx] = f
+    queue.put((process_index,result))
+        
 def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m_shape):
-    proc = []
-    for _ in range(num_processes):
-        p = Process(target=create_ridge, kwargs=[m_shape, ])
-    for p in proc:
+    queue = Queue()
+    processes = []
+    process_chunk_size = pop_size // num_processes
+    for process_index in range(num_processes):
+        start = process_index * process_chunk_size
+        if process_index == num_processes - 1:
+            end = pop_size
+        else:
+            end = start + process_chunk_size
+        p = Process(target=create_ridge, args=(m_shape, pop[start:end], process_index, queue))
+        processes.append(p)
+        p.start()
+    for p in processes:
         p.join()
+    for _ in range(num_processes):
+        process_idx, result = queue.get()
+        start = process_idx * process_chunk_size
+        if process_index == num_processes - 1:
+            end = pop_size
+        else:
+            end = start + process_chunk_size
+        fitnesses[start:end] = result
         
     
 def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutation_rate, diversity_threshold, diversity_decay_rate, sigma, alpha):

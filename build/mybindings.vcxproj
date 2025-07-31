@@ -339,6 +339,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="D:\TMUFEEL\cpp\algo2.cpp" />
     <ClCompile Include="D:\TMUFEEL\cpp\bindings.cpp" />
     <ClCompile Include="D:\TMUFEEL\cpp\mssp_dailsdjikstra.cpp" />
+    <ClCompile Include="D:\TMUFEEL\cpp\mssp_dailsdjikstra2d.cpp" />
     <ClCompile Include="D:\TMUFEEL\cpp\mssp_dijkstra.cpp" />
   </ItemGroup>
   <ItemGroup />

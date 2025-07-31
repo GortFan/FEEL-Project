@@ -13,6 +13,9 @@
     <ClCompile Include="D:\TMUFEEL\cpp\mssp_dailsdjikstra.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\TMUFEEL\cpp\mssp_dailsdjikstra2d.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\TMUFEEL\cpp\mssp_dijkstra.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

@@ -12,7 +12,7 @@
 
 using namespace std;
 
-inline bool is_obstacle2D(int idx, const std::unordered_set<int>& obstacles) {
+inline bool isObstacle2D(int idx, const std::unordered_set<int>& obstacles) {
     return obstacles.find(idx) != obstacles.end();
 }
 

@@ -12,7 +12,7 @@
 
 using namespace std;
 
-inline bool is_obstacle3D(int idx, const std::unordered_set<int>& obstacles) {
+inline bool isObstacle3D(int idx, const std::unordered_set<int>& obstacles) {
     return obstacles.find(idx) != obstacles.end();
 }
 
@@ -68,7 +68,7 @@ int index3D(int x, int y, int z, int M, int K) {
     return x * M * K + y * K + z;
 }
 
-vector<int> dialsDijkstra3D(const vector<vector<pair<int, int>>>& adj, const vector<int>& sources, int N, int M, int K) {
+std::vector<int> dialsDijkstra3D(const std::vector<std::vector<std::pair<int, int>>>& adj, const std::vector<int>& sources, int N, int M, int K) {
     const int INF = numeric_limits<int>::max();
     vector<int> dist(N * M * K, INF);
     const int MAX_EDGE_WEIGHT = 17;
