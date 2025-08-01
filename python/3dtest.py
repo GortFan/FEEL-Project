@@ -176,6 +176,7 @@ def create_ridge(m_shape, individual_batch, process_index, queue):
         c = np.sum(mc == 1)
         f = fitness_gpu(mc, c)
         result[idx] = f
+        print(f)
     print(result)
     queue.put((process_index,result))
         
@@ -216,30 +217,9 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     fitness_history = []
     # The loop contents must be serialized because the order of chained operations must be consistent
     for generation_number in range(generation_qty):
-        fitnesses = np.zeros(pop_size)
-
-        # The nested loop contents are independent of each other so this can be parallelized
-        for i in range(pop_size):
-            mc = m.copy()
-            r = cuboid_mask(matrix=mc,
-                            base_z=0,
-                            base_y=125,
-                            base_x=125,
-                            cuboid_depth=pop[i][0],
-                            cuboid_height=pop[i][1],
-                            cuboid_width=pop[i][2],
-                            yaw=pop[i][3],
-                            pitch=pop[i][4],
-                            roll=pop[i][5],
-                            taper_width=pop[i][6],
-                            taper_height=pop[i][7])
-            mc[r] = 0
-            c = np.sum(mc == 1)
-            t_start = time.time()
-            fitnesses[i] = fitness_gpu(mc, c)
-            t_end = time.time()
-            print(f"fitness_gpu time for individual {i}: {t_end - t_start:.6f} seconds")
-        
+        # fitnesses = np.zeros(pop_size)
+        print(generation_number)
+        fitnesses = parallelize_ridge_evaluation(4, np.zeros(pop_size), pop, pop_size, m.shape)
         current_min_idx = np.argmin(fitnesses)
         current_min_fitness = fitnesses[current_min_idx]
         print(current_min_fitness)
