@@ -38,10 +38,30 @@ def eval2_gpu(m) -> float:
     return float(m_edt2.get())  # Convert back to CPU
 
 def fitness_gpu(m, c_count) -> float: 
+    # Encapsulates eval1 and eval2 logic in this function to reduce memory transfers to *hopefully* allow for more parallel batches
     penalty = 0  # No penalty because we are testing impacts w/o domain specific constraints
     if c_count < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
-        penalty = (m.shape[0]*m.shape[1]*m.shape[2] - c_count) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
-    return (eval1_gpu(m) + eval2_gpu(m) + penalty)
+        penalty = (m.shape[0]*m.shape[1]*m.shape[2] - c_count) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)        
+
+    # eval 1 
+    m_gpu = cp.asarray(m)
+    edt = cp_ndimage.distance_transform_edt(m_gpu)
+    edt_nz = edt[edt != 0]
+    m_edt1 = cp.mean(edt_nz)
+    
+    # eval 2
+    m2_gpu = m_gpu.copy()
+    m2_gpu[m2_gpu == 0] = cp.nan  
+    o_src = cp.zeros([1, m2_gpu.shape[1], m2_gpu.shape[2]]) 
+    m2_gpu = cp.append(m2_gpu, o_src, axis=0) 
+    nans = cp.isnan(m2_gpu)
+    edt2 = cp_ndimage.distance_transform_edt(m2_gpu)
+    edt2[nans] = 0
+    edt2_nz = edt2[edt2 != 0]
+    m_edt2 = cp.mean(edt2_nz)
+    
+    f = float(m_edt1.get()) + float(m_edt2.get()) + penalty
+    return f
 
 def fitness(m, c_count) -> float:
     penalty = 0
