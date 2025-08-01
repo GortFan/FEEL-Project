@@ -1,3 +1,4 @@
+import time
 import numpy as np
 from shape3d import cylinder_mask, cuboid_mask
 import math
@@ -5,6 +6,42 @@ import pyvista as pv
 import scipy.ndimage as sp
 import random
 from multiprocessing import Process, Queue
+import cupy as cp
+import cupyx.scipy.ndimage as cp_ndimage
+
+def eval1_gpu(m) -> float:
+    m = cp.asarray(m)
+    edt = cp_ndimage.distance_transform_edt(m)
+    edt_nz = edt[edt != 0]
+    m_edt = cp.mean(edt_nz)
+    return float(m_edt.get())  # Convert back to CPU
+
+def eval2_gpu(m) -> float:
+    m_gpu = cp.asarray(m)
+    m_gpu = m_gpu.copy()
+    m_gpu[m_gpu == 0] = cp.nan  # mark ridge
+    
+    # append oxygen layer
+    o_src = cp.zeros([1, m_gpu.shape[1], m_gpu.shape[2]]) 
+    m2 = cp.append(m_gpu, o_src, axis=0) 
+    
+    # create mask with ridge against not ridge
+    nans = cp.isnan(m2)
+    
+    edt2 = cp_ndimage.distance_transform_edt(m2)
+    
+    # remove ridge from matrix
+    edt2[nans] = 0
+    
+    edt2_nz = edt2[edt2 != 0]
+    m_edt2 = cp.mean(edt2_nz)
+    return float(m_edt2.get())  # Convert back to CPU
+
+def fitness_gpu(m, c_count) -> float: 
+    penalty = 0  # No penalty because we are testing impacts w/o domain specific constraints
+    if c_count < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
+        penalty = (m.shape[0]*m.shape[1]*m.shape[2] - c_count) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
+    return (eval1_gpu(m) + eval2_gpu(m) + penalty)
 
 def fitness(m, c_count) -> float:
     penalty = 0
@@ -16,7 +53,11 @@ def eval1(m) -> float:
     m = m.copy()
     edt = sp.distance_transform_edt(m)
     edt_nz = edt[edt != 0]
+    
+    t0 = time.time()
     m_edt = np.mean(edt_nz)
+    t1 = time.time()
+    print(f"eval1 np.mean time: {t1 - t0:.6f} seconds")
     return m_edt
 
 def eval2(m) -> float:
@@ -36,7 +77,10 @@ def eval2(m) -> float:
     edt2[nans] = 0
     
     edt2_nz = edt2[edt2 != 0]
+    t0 = time.time()
     m_edt2 = np.mean(edt2_nz)
+    t1 = time.time()
+    print(f"eval2 np.mean time: {t1 - t0:.6f} seconds")
     return m_edt2
 
 struct = [
@@ -114,7 +158,7 @@ def is_in_population(chromosome, population):
     
 def create_ridge(m_shape, individual_batch, process_index, queue):
     result = [None]*len(individual_batch)
-    for idx, individual in individual_batch:
+    for idx, individual in enumerate(individual_batch):
         mc = np.ones(m_shape)
         r = cuboid_mask(matrix=mc,
                         base_z=0,
@@ -130,8 +174,9 @@ def create_ridge(m_shape, individual_batch, process_index, queue):
                         taper_height=individual[7])
         mc[r] = 0
         c = np.sum(mc == 1)
-        f = fitness(mc, c)
+        f = fitness_gpu(mc, c)
         result[idx] = f
+    print(result)
     queue.put((process_index,result))
         
 def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m_shape):
@@ -152,12 +197,12 @@ def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m
     for _ in range(num_processes):
         process_idx, result = queue.get()
         start = process_idx * process_chunk_size
-        if process_index == num_processes - 1:
+        if process_idx == num_processes - 1:
             end = pop_size
         else:
             end = start + process_chunk_size
         fitnesses[start:end] = result
-        
+    return fitnesses
     
 def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutation_rate, diversity_threshold, diversity_decay_rate, sigma, alpha):
     m[0, :, :] = 0
@@ -171,12 +216,10 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     fitness_history = []
     # The loop contents must be serialized because the order of chained operations must be consistent
     for generation_number in range(generation_qty):
-        
         fitnesses = np.zeros(pop_size)
 
         # The nested loop contents are independent of each other so this can be parallelized
         for i in range(pop_size):
-            print(i)
             mc = m.copy()
             r = cuboid_mask(matrix=mc,
                             base_z=0,
@@ -192,7 +235,10 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
                             taper_height=pop[i][7])
             mc[r] = 0
             c = np.sum(mc == 1)
-            fitnesses[i] = fitness(mc, c)   
+            t_start = time.time()
+            fitnesses[i] = fitness_gpu(mc, c)
+            t_end = time.time()
+            print(f"fitness_gpu time for individual {i}: {t_end - t_start:.6f} seconds")
         
         current_min_idx = np.argmin(fitnesses)
         current_min_fitness = fitnesses[current_min_idx]
@@ -240,7 +286,7 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     best_chromosome = pop[min_fitness_idx].tolist()
     return min_fitness, best_chromosome, list(zip(pop.tolist(), fitnesses.tolist())), fitness_history
 
-if __name__ == "__main__":
+def GA_dispatch():
     m = np.ones((121,250,250))
     m[0, :, :] = 0
     
@@ -253,7 +299,6 @@ if __name__ == "__main__":
     threshold_decay_rate = 0.1
     sigma = 5
     alpha = 1
-    print("hi")
     fmin, fmin_chrom, tgen, fitnesses = genetic_algorithm(
         m,
         generations,
@@ -297,3 +342,52 @@ if __name__ == "__main__":
     plotter.add_mesh(thresholded, color="red", show_edges=False,
                      ambient=0.3, diffuse=0.7, specular=0.5)
     plotter.show()
+
+def profiler():
+    import time
+    start = time.time()
+    t0 = time.time()
+    m = np.ones((121,250,250))
+    t1 = time.time()
+    m[0, :, :] = 0
+    t2 = time.time()
+    print(f"Time to create m: {t1 - t0:.4f} seconds")
+    print(f"Time to zero m[0,:,:]: {t2 - t1:.4f} seconds")
+
+    t3 = time.time()
+    r = cuboid_mask(matrix=m,
+                    base_z=0,
+                    base_y=125,
+                    base_x=125,
+                    cuboid_depth=40,
+                    cuboid_height=60,
+                    cuboid_width=80,
+                    yaw=20,
+                    pitch=11,
+                    roll=55,
+                    taper_width=0.5,
+                    taper_height=0.22)
+    t4 = time.time()
+    print(f"Time for cuboid_mask: {t4 - t3:.4f} seconds")
+
+    mc = m.copy()
+    t5 = time.time()
+    print(f"Time to copy m: {t5 - t4:.4f} seconds")
+
+    mc[r] = 0
+    t6 = time.time()
+    print(f"Time to set mc[r]=0: {t6 - t5:.4f} seconds")
+
+    c = np.sum(mc == 1)
+    t7 = time.time()
+    print(f"Time to sum mc==1: {t7 - t6:.4f} seconds")
+
+    f = fitness_gpu(mc, c)
+    t8 = time.time()
+    print(f"Time for fitness: {t8 - t7:.4f} seconds")
+
+    print(f"Fitness value: {f}")
+    print(f"Total execution time: {t8 - start:.4f}")
+    
+if __name__ == "__main__":
+    GA_dispatch()

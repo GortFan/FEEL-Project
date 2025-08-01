@@ -1,7 +1,42 @@
 # Helpful functions
+import time
 import scipy.ndimage as sp
 import math 
+import cupy as cp
+import cupyx.scipy.ndimage as cp_ndimage
 
+def eval1_gpu(m) -> float:
+    m = cp.asarray(m)
+    edt = cp_ndimage.distance_transform_edt(m)
+    edt_nz = edt[edt != 0]
+    m_edt = cp.mean(edt_nz)
+    return float(m_edt.get())  # Convert back to CPU
+
+def eval2_gpu(m) -> float:
+    m_gpu = cp.asarray(m)
+    m_gpu = m_gpu.copy()
+    m_gpu[m_gpu == 0] = cp.nan  # mark ridge
+    
+    # append oxygen layer
+    o_src = cp.zeros([1, m_gpu.shape[1], m_gpu.shape[2]]) 
+    m2 = cp.append(m_gpu, o_src, axis=0) 
+    
+    # create mask with ridge against not ridge
+    nans = cp.isnan(m2)
+    
+    edt2 = cp_ndimage.distance_transform_edt(m2)
+    
+    # remove ridge from matrix
+    edt2[nans] = 0
+    
+    edt2_nz = edt2[edt2 != 0]
+    m_edt2 = cp.mean(edt2_nz)
+    return float(m_edt2.get())  # Convert back to CPU
+
+def fitness_gpu(m) -> float: 
+    penalty = 0  # No penalty because we are testing impacts w/o domain specific constraints
+    return (eval1_gpu(m) + penalty)
+            
 def eval1(m) -> float:
     m = m.copy()
     edt = sp.distance_transform_edt(m)
@@ -96,7 +131,7 @@ def generate_single_allele_series(struct_idx):
                         taper_height=taper_height,
                         )
         m[c] = 0
-        f = fitness(m)
+        f = fitness_gpu(m)
         entry = {
             'depth': depth,
             'height': height,
@@ -148,7 +183,10 @@ def generate_single_allele_series(i):
             taper_height=chrom[7],
         )
         m[c] = 0
-        f = fitness(m)
+        start_time = time.time()
+        f = fitness_gpu(m)
+        elapsed_time = time.time() - start_time
+        print(f"Fitness calculation time: {elapsed_time:.4f} seconds")
         entry = dict(zip(allele_names, chrom))
         entry['chromosome'] = chrom
         entry['fitness'] = f
