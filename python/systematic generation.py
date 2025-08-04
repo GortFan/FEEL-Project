@@ -1,7 +1,11 @@
-# Helpful functions
 import time
+import numpy as np
+from shape3d import cylinder_mask, cuboid_mask
+import math
+import pyvista as pv
 import scipy.ndimage as sp
-import math 
+import random
+from multiprocessing import Process, Queue
 import cupy as cp
 import cupyx.scipy.ndimage as cp_ndimage
 
@@ -33,9 +37,11 @@ def eval2_gpu(m) -> float:
     m_edt2 = cp.mean(edt2_nz)
     return float(m_edt2.get())  # Convert back to CPU
 
-def fitness_gpu(m) -> float: 
+def fitness_gpu(m, c_count) -> float: 
     penalty = 0  # No penalty because we are testing impacts w/o domain specific constraints
-    return (eval1_gpu(m) + penalty)
+    if c_count < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
+        penalty = (m.shape[0]*m.shape[1]*m.shape[2] - c_count) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
+    return (eval1_gpu(m) + eval2_gpu(m) + penalty)
             
 def eval1(m) -> float:
     m = m.copy()
@@ -98,56 +104,6 @@ struct = [
     (0, 10),
 ]
 
-def generate_single_allele_series(struct_idx):
-    step_depth = (struct[0][1] - struct[0][0]) * 0.01
-    num_steps = int(1 / 0.01)
-
-    depth = struct[0][0]
-    for _ in range(num_steps):
-        m = np.ones((121, 250, 250))
-        m[0, :, :] = 0
-                
-        depth = depth + step_depth
-        height = 60
-        width = 60
-        yaw = 0
-        pitch = 0
-        roll = 0
-        taper_width = 0
-        taper_height = 0
-        chromosome = [depth, height, width, yaw, pitch, roll, taper_width, taper_height]
-        
-        c = cuboid_mask(matrix=m,
-                        base_z=0,
-                        base_y=m.shape[1] // 2,
-                        base_x=m.shape[2] // 2,
-                        cuboid_depth=depth,
-                        cuboid_height=height,
-                        cuboid_width=width,
-                        yaw=0,
-                        pitch=0,
-                        roll=0,
-                        taper_width=taper_width,
-                        taper_height=taper_height,
-                        )
-        m[c] = 0
-        f = fitness_gpu(m)
-        entry = {
-            'depth': depth,
-            'height': height,
-            'width': width,
-            'yaw': yaw,
-            'pitch': pitch,
-            'roll': roll,
-            'taper_width': taper_width,
-            'taper_height': taper_height,
-            'chromosome': chromosome,
-            'fitness': f
-        }
-        df = pd.concat([df, pd.DataFrame([entry])], ignore_index=True)
-
-    df.to_csv('1_Depth_Series.csv', index=False)
-
 def generate_single_allele_series(i):
     import pandas as pd
     columns = ['depth', 'height', 'width', 'yaw', 'pitch', 'roll', 'taper_width', 'taper_height', 'chromosome', 'fitness']
@@ -158,9 +114,8 @@ def generate_single_allele_series(i):
     allele_names = ['depth', 'height', 'width', 'yaw', 'pitch', 'roll', 'taper_width', 'taper_height']
 
     # Set baseline values (midpoint or a fixed value)
-    baseline = [60, 60, 60, 0, 0, 0, 0, 0]
+    baseline = [60, 125, 125, 0, 0, 0, 0, 0]
     for step_idx in range(num_steps):
-        print(step_idx)
         chrom = baseline.copy()
         chrom[i] = struct[i][0] + step * step_idx
 
@@ -183,10 +138,8 @@ def generate_single_allele_series(i):
             taper_height=chrom[7],
         )
         m[c] = 0
-        start_time = time.time()
-        f = fitness_gpu(m)
-        elapsed_time = time.time() - start_time
-        print(f"Fitness calculation time: {elapsed_time:.4f} seconds")
+        c = np.sum(m == 1)
+        f = fitness_gpu(m,c)
         entry = dict(zip(allele_names, chrom))
         entry['chromosome'] = chrom
         entry['fitness'] = f

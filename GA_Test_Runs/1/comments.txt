@@ -1,0 +1,9 @@
+Initial run. Going in blind.
+
+Main takeaways:
+Diversity constantly decreased per epoch, this means some part of the fitness sharing approach did not work.
+Given the conditional for running the diversity function was reached, the only conclusion is the conditional within this diversity function was not reached.
+The condition is based on the sigma value also known as the sharing radius or something similar (not sure the exact name).
+Currently the value seems to be too small, so I will increase it and keep everything else the same for the next run. 
+Ideal behaviour is diversity remain constant or increase for a time until later on it should drop.
+From the time it drops there should be a sufficient amount of epochs for convergence to occur and the result to stabalize for a non negligable amount of generations (AKA no noise at the end for fitness vs. epoch)

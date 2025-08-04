@@ -1,0 +1,4 @@
+All very very stable fitnesses per run and over each run. This is good (I think).
+Obvioulsy the exact values and thus the results are off because no dials algorithm was used.
+This next run will be low quantity same volume matrix to test the validity of the dials algorithm.
+Small scale 3D tests confirmed the results made sense but wanted to try it in the pipeline to be sure before a N=50 run.

@@ -1,0 +1,7 @@
+Diversity is now increasing until the threshold no longer allows for it then it decreases.
+This is the expected behaviour. Good.
+The final fitness value is essentially the same as from Run 1. 
+This suggests fitness sharing has no impact on the final result. 
+Next step should be to do repeated runs to see if any other final values arise.
+I will do a frequence distribution and std deviation for this collection of results.
+I will do 50 runs for statistical significance. This will take 12.5 hours.

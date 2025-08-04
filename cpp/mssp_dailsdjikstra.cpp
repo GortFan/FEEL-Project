@@ -54,16 +54,6 @@ std::vector<std::vector<std::pair<int, int>>> makeAdjMatrix3D(
     return adj;
 }
 
-// vector<int> generateSources(int count, int size) {
-//     vector<int> sources;
-//     random_device rd;
-//     mt19937 gen(rd());
-//     uniform_int_distribution<> dis(0, size - 1);
-//     for (int i = 0; i < count; ++i)
-//         sources.push_back(dis(gen));
-//     return sources;
-// }
-
 int index3D(int x, int y, int z, int M, int K) {
     return x * M * K + y * K + z;
 }

@@ -9,8 +9,6 @@ ENV/
 env.bak/
 venv.bak/
 
-*.csv
-
 .vscode/
 .idea/
 *.swp
@@ -25,3 +23,5 @@ build/
 *.exe
 *.obj
 *.pdb
+
+*.sh
