@@ -26,6 +26,7 @@ class Config:
         self.threshold_decay_rate = 0.1
         self.sigma = 30
         self.alpha = 1
+        self.num_processes = 5 
 
 config = Config()
 
@@ -39,11 +40,17 @@ def eval1(m) -> float:
     m_edt = cp.mean(edt_nz)
     return float(m_edt.get()) 
 
-def eval2(m, use_dials=False):
+def eval2(m, use_dials=None):
     """
     Uses custom written dails algorithm in C++ using purely the CPU. 
     Works for scenarios when obstructions would intercept EDT straight lines.
     """
+    if use_dials is None:
+        use_dials = config.dails
+    
+    print("WOOOOOOOOOOOOOOOOOOO", use_dials)
+    print(f"DEBUG: eval2 using {'DIJKSTRA' if use_dials else 'EDT'} algorithm")
+    
     def get_obstacles_indices(m):
         """Returns a list of obstacles (0=obstacle, 1=traversible) in 1D array indexing style"""
         obstacle_positions_3D = np.where(m == 0)
@@ -66,7 +73,9 @@ def eval2(m, use_dials=False):
         
         sources = (x_coords * M * K + y_coords * K + z_coords).tolist()
         return sources 
+        
     if use_dials:
+        print("dials")
         N, M, K = m.shape
         CPP_INT_MAX = 2147483647 # from std::numeric_limits<int>::max(), for obstacle nodes
 
@@ -77,6 +86,7 @@ def eval2(m, use_dials=False):
         
         return np.mean(filtered_distance_transform)
     else:
+        print("EDT")
         m_gpu = cp.asarray(m)
         m_gpu = m_gpu.copy()
         m_gpu[m_gpu == 0] = cp.nan  # mark ridge
@@ -97,7 +107,7 @@ def eval2(m, use_dials=False):
         m_edt2 = cp.mean(edt2_nz)
         return float(m_edt2.get())  # Convert back to CPU
 
-def fitness(m, c_count) -> float: 
+def fitness(m, c_count, use_dials) -> float: 
     """
     Encapsulates the eval logic and adds penalty based on catalyst preservation requirements (arbitrary magic number).
     """
@@ -105,7 +115,7 @@ def fitness(m, c_count) -> float:
     if c_count < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
         print("penalty")
         penalty = (m.shape[0]*m.shape[1]*m.shape[2] - c_count) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
-    return (eval1(m) + eval2(m) + penalty)
+    return (eval1(m) + eval2(m, use_dials) + penalty)
 
 struct = [
     (1, 59),
@@ -179,7 +189,7 @@ def penalize_drift_sharing(pop: np.ndarray, fitnesses: np.ndarray, sigma: float,
 def is_in_population(chromosome, population):
     return np.any(np.all(population == chromosome, axis=1))
     
-def create_ridge(m_shape, individual_batch, process_index, queue):
+def create_ridge(m_shape, individual_batch, process_index, use_dials, queue):
     result = [None]*len(individual_batch)
     for idx, individual in enumerate(individual_batch):
         mc = np.ones(m_shape)
@@ -197,7 +207,7 @@ def create_ridge(m_shape, individual_batch, process_index, queue):
                         taper_height=individual[6])
         mc[r] = 0
         c = np.sum(mc == 1)
-        f = fitness(mc, c)
+        f = fitness(mc, c, use_dials)
         result[idx] = f
         print(f)
     print(result)
@@ -213,7 +223,7 @@ def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m
             end = pop_size
         else:
             end = start + process_chunk_size
-        p = Process(target=create_ridge, args=(m_shape, pop[start:end], process_index, queue))
+        p = Process(target=create_ridge, args=(m_shape, pop[start:end], process_index, config.dails, queue))
         processes.append(p)
         p.start()
     for p in processes:
@@ -241,7 +251,7 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     
     for generation_number in range(generation_qty):
         # Get raw fitnesses (never modify these!)
-        raw_fitnesses = parallelize_ridge_evaluation(5, np.zeros(pop_size), pop, pop_size, m.shape) # 5 is a magic number must be bound to a config value for different run types
+        raw_fitnesses = parallelize_ridge_evaluation(config.num_processes, np.zeros(pop_size), pop, pop_size, m.shape) # 5 is a magic number must be bound to a config value for different run types
         current_min_idx = np.argmin(raw_fitnesses)
         current_min_fitness = raw_fitnesses[current_min_idx]
         
@@ -297,7 +307,7 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
         fitness_history.append(best_raw_fitness)
     
     # For final reporting, use raw fitnesses
-    final_raw_fitnesses = parallelize_ridge_evaluation(10, np.zeros(pop_size), pop, pop_size, m.shape)
+    final_raw_fitnesses = parallelize_ridge_evaluation(config.num_processes, np.zeros(pop_size), pop, pop_size, m.shape)
     
     df = pd.DataFrame(generation_data)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -319,132 +329,123 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     return best_raw_fitness, best_chrom.tolist(), list(zip(pop.tolist(), final_raw_fitnesses.tolist())), fitness_history
 
 def GA_dispatch():
+    print(f"DEBUG: GA_dispatch using config - "
+          f"dails={config.dails}, "
+          f"generations={config.generations}, "
+          f"pop_size={config.pop_size}, "
+          f"elite_size={config.elite_size}, "
+          f"worst_size={config.worst_size}, "
+          f"mutation_rate={config.mutation_rate}, "
+          f"diversity_threshold={config.diversity_threshold}, "
+          f"threshold_decay_rate={config.threshold_decay_rate}, "
+          f"sigma={config.sigma}, "
+          f"alpha={config.alpha}, "
+          f"num_processes={config.num_processes}")
+    
     m = np.ones((61, 124, 124))
     m[0, :, :] = 0
     
-    generations = 10
-    elite_size = 1
-    worst_size = 1
-    pop_size = 20
-    mutation_rate = 0.1
-    diversity_threshold = 5000
-    threshold_decay_rate = 1
-    sigma = 30
-    alpha = 1
     fmin, fmin_chrom, tgen, fitnesses = genetic_algorithm(
         m,
-        generations,
-        pop_size,
-        elite_size,
-        worst_size,
-        mutation_rate,
-        diversity_threshold,
-        threshold_decay_rate,
-        sigma,
-        alpha
+        config.generations,
+        config.pop_size,
+        config.elite_size,
+        config.worst_size,
+        config.mutation_rate,
+        config.diversity_threshold,
+        config.threshold_decay_rate,
+        config.sigma,
+        config.alpha
     )
     return fmin, fmin_chrom, tgen, fitnesses
     
-def profiler():
-    import time
-    start = time.time()
-    t0 = time.time()
-    m = np.ones((61,124,124))
-    t1 = time.time()
-    m[0, :, :] = 0
-    t2 = time.time()
-    print(f"Time to create m: {t1 - t0:.4f} seconds")
-    print(f"Time to zero m[0,:,:]: {t2 - t1:.4f} seconds")
-    e = [47, 62, 62, 176, 178, 0, 0]
-    t3 = time.time()
-    r = cuboid_mask(matrix=m,
-                    base_z=0,
-                    base_y=62,
-                    base_x=62,
-                    cuboid_depth=e[0],
-                    cuboid_height=e[1],
-                    cuboid_width=e[2],
-                    yaw=e[3],
-                    pitch=e[4],
-                    roll=0,
-                    taper_width=e[5],
-                    taper_height=e[6])
-    t4 = time.time()
-    print(f"Time for cuboid_mask: {t4 - t3:.4f} seconds")
-
-    mc = m.copy()
-    t5 = time.time()
-    print(f"Time to copy m: {t5 - t4:.4f} seconds")
-
-    mc[r] = 0
-    t6 = time.time()
-    print(f"Time to set mc[r]=0: {t6 - t5:.4f} seconds")
-
-    c = np.sum(mc == 1)
-    t7 = time.time()
-    print(f"Time to sum mc==1: {t7 - t6:.4f} seconds")
-
-    f = fitness(mc, c)
-    t8 = time.time()
-    print(f"Time for fitness: {t8 - t7:.4f} seconds")
-
-    print(f"Fitness value: {f}")
-    print(f"Total execution time: {t8 - start:.4f}")
-    
-    #copy paste this at the end whenever mc exists to output how it looks
-    # Create a uniform grid
-    grid = pv.ImageData(dimensions=np.array(mc.shape) + 1)
-    grid.cell_data["values"] = mc.ravel(order="F")  # For correct orientation
-
-    # Threshold to keep only m == 0
-    thresholded = grid.threshold(0.1, invert=True)  # Keep values <= 0.1
-
-    # Plot with lighting
-    plotter = pv.Plotter()
-    plotter.enable_shadows()
-    plotter.add_mesh(thresholded, color="red", show_edges=False,
-                     ambient=0.3, diffuse=0.7, specular=0.5)
-    plotter.show()
-    
-def single_test():
-    m = np.ones((61, 124, 124))
-    m[0, :, :] = 0
-    c2 = [47, 62, 28, 73, 178, 0, 0]
-    r = cuboid_mask(matrix=m,
-                    base_z=0,
-                    base_y=m.shape[1] // 2,
-                    base_x=m.shape[2] // 2,
-                    cuboid_depth=c2[0],
-                    cuboid_height=c2[1],
-                    cuboid_width=c2[2],
-                    yaw=c2[3],
-                    pitch=c2[4],
-                    roll=0,
-                    taper_width=c2[5],
-                    taper_height=c2[6])
-    m[r] = 0
-    c = np.sum(m == 1)
-    f = fitness(m, c)
-    print(f)
-
 if __name__ == "__main__":
-    num_runs = 1
-    all_results = [None]*num_runs
-    for i in range(num_runs):
-        seed = random.randint(1, 1024)
+    parser = argparse.ArgumentParser(description='Run GA with specific configuration')
+    parser.add_argument('--experiment', type=str, required=True, help='Experiment name')
+    parser.add_argument('--use_dials', type=str, default='False', help='Use DIALS algorithm (True/False)')
+    parser.add_argument('--generations', type=int, default=10, help='Number of generations')
+    parser.add_argument('--pop_size', type=int, default=20, help='Population size')
+    parser.add_argument('--elite_size', type=int, default=1, help='Elite size')
+    parser.add_argument('--worst_size', type=int, default=1, help='Worst size')
+    parser.add_argument('--mutation_rate', type=float, default=0.1, help='Mutation rate')
+    parser.add_argument('--diversity_threshold', type=float, default=5000, help='Diversity threshold')
+    parser.add_argument('--threshold_decay_rate', type=float, default=0.1, help='Threshold decay rate')
+    parser.add_argument('--sigma', type=float, default=30, help='Sigma for sharing function')
+    parser.add_argument('--alpha', type=float, default=1, help='Alpha for sharing function')
+    parser.add_argument('--num_processes', type=int, default=5, help='Number of parallel processes')
+    parser.add_argument('--num_runs', type=int, default=1, help='Number of runs')
+    
+    args = parser.parse_args()
+    
+    # Convert string to boolean
+    use_dials_bool = args.use_dials.lower() == 'true'
+    
+    # Update global config
+    config.dails = use_dials_bool
+    config.generations = args.generations
+    config.pop_size = args.pop_size
+    config.elite_size = args.elite_size          
+    config.worst_size = args.worst_size          
+    config.mutation_rate = args.mutation_rate    
+    config.diversity_threshold = args.diversity_threshold  
+    config.threshold_decay_rate = args.threshold_decay_rate  
+    config.sigma = args.sigma                    
+    config.alpha = args.alpha                    
+    config.num_processes = args.num_processes    
+    
+    print("=" * 60)
+    print(f"EXPERIMENT: {args.experiment}")
+    print("=" * 60)
+    print(f"config.dails: {config.dails}")
+    print(f"config.generations: {config.generations}")
+    print(f"config.pop_size: {config.pop_size}")
+    print(f"Number of runs: {args.num_runs}")
+    print("=" * 60)
+    
+    all_results = []
+    experiment_start_time = time.time()
+    
+    for run in range(args.num_runs):
+        run_start_time = time.time()
+        print(f"\n--- Run {run+1}/{args.num_runs} ---")
+        
+        seed = random.randint(1, 10000)
         np.random.seed(seed)
         random.seed(seed)
         cp.random.seed(seed)
-        result = GA_dispatch()
         
-        all_results[i] = ({
-            'run': i,
-            'seed': seed,
-            'best_fitness': result[0],
-            'best_chromosome': result[1]
-        })
-        print(f"Run {i} completed")
+        try:
+            result = GA_dispatch()
+            
+            run_time = time.time() - run_start_time
+            all_results.append({
+                'experiment': args.experiment,
+                'run': run + 1,
+                'seed': seed,
+                'use_dials': config.dails,
+                'generations': config.generations,
+                'pop_size': config.pop_size,
+                'best_fitness': result[0],
+                'best_chromosome': result[1],
+                'run_time_minutes': run_time / 60
+            })
+            
+            print(f"✓ Best fitness: {result[0]:.6f}")
+            print(f"✓ Runtime: {run_time/60:.1f} minutes")
+            
+        except Exception as e:
+            print(f"✗ Run {run+1} failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    # Save results
+    experiment_time = time.time() - experiment_start_time
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
     
     df = pd.DataFrame(all_results)
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    df.to_csv(f"ga_multiple_runs_{num_runs}_{timestamp}.csv", index=False)
+    filename = f"ga_experiment_{args.experiment}_{timestamp}.csv"
+    df.to_csv(filename, index=False)
+    
+    print(f"\n EXPERIMENT {args.experiment} ")
+    print(f"Total time: {experiment_time/60:.1f} minutes")
+    print(f"Results saved to: {filename}")
