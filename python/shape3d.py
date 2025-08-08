@@ -85,22 +85,19 @@ def cuboid_mask(matrix, base_z, base_y, base_x, cuboid_depth, cuboid_height, cub
 
     return in_depth & in_width & in_height
 
-
-
-def cylinder_mask(matrix, base_z, base_y, base_x, cylinder_length, cylinder_radius,
-                  yaw=0.0, pitch=0.0, roll=0.0,
-                  taper_z=0.0, taper_y=0.0, taper_x=0.0):
+def elliptical_cylinder_mask(matrix, base_z, base_y, base_x, cylinder_length, 
+                            radius_y, radius_x, yaw=0.0, pitch=0.0, roll=0.0, taper_z=0.0):
     """
-    Create a 3D boolean mask with a rotated, tapered cylinder.
+    Create a 3D boolean mask with a rotated, tapered elliptical cylinder.
 
     Parameters:
         matrix (np.ndarray): 3D volume to match shape.
         base_z/y/x (float): Starting point of the cylinder.
         cylinder_length (float): Length of the cylinder along local z-axis.
-        cylinder_radius (float): Radius at the base.
+        radius_y (float): Semi-axis length in y direction.
+        radius_x (float): Semi-axis length in x direction.
         yaw/pitch/roll (float): Euler angles in degrees.
-        taper_z (float): Fractional taper along z-axis (0 = no taper, 1 = taper to point).
-        taper_y/x (float): Fractional taper across ±y/±x extent (0 = no taper, 1 = zero radius at edge).
+        taper_z (float): Linear tapering along z-axis (0 = cylinder, 1 = cone to point).
 
     Returns:
         np.ndarray: Boolean mask.
@@ -117,7 +114,7 @@ def cylinder_mask(matrix, base_z, base_y, base_x, cylinder_length, cylinder_radi
     x = xx - base_x
     coords = np.stack([z, y, x], axis=-1)
 
-    # Rotation
+    # Rotation (same as before)
     yaw_rad, pitch_rad, roll_rad = np.deg2rad([yaw, pitch, roll])
     Rz = np.array([[np.cos(yaw_rad), -np.sin(yaw_rad), 0],
                    [np.sin(yaw_rad),  np.cos(yaw_rad), 0],
@@ -134,20 +131,24 @@ def cylinder_mask(matrix, base_z, base_y, base_x, cylinder_length, cylinder_radi
     coords_rot = np.tensordot(coords, R_inv, axes=([3], [1]))
     z_rot, y_rot, x_rot = coords_rot[..., 0], coords_rot[..., 1], coords_rot[..., 2]
 
-    # Normalized coordinates
+    # Simple, intuitive tapering along z-axis only
     z_frac = np.clip(z_rot / cylinder_length, 0.0, 1.0)
-    y_frac = np.clip(np.abs(y_rot) / cylinder_radius, 0.0, 1.0)
-    x_frac = np.clip(np.abs(x_rot) / cylinder_radius, 0.0, 1.0)
+    local_radius_y = radius_y * (1.0 - taper_z * z_frac)
+    local_radius_x = radius_x * (1.0 - taper_z * z_frac)
+    local_radius_y = np.clip(local_radius_y, a_min=0.0, a_max=None)
+    local_radius_x = np.clip(local_radius_x, a_min=0.0, a_max=None)
 
-    # Tapering
-    taper_total = taper_z * z_frac + taper_y * y_frac + taper_x * x_frac
-    local_radius = cylinder_radius * (1.0 - taper_total)
-    local_radius = np.clip(local_radius, a_min=0.0, a_max=None)
-
+    # Check bounds
     in_length = (z_rot >= 0) & (z_rot <= cylinder_length)
-    in_radius = (y_rot**2 + x_rot**2 <= local_radius**2)
+    
+    # Ellipse equation: (y/a)² + (x/b)² ≤ 1
+    # Avoid division by zero
+    safe_radius_y = np.where(local_radius_y > 0, local_radius_y, 1e-10)
+    safe_radius_x = np.where(local_radius_x > 0, local_radius_x, 1e-10)
+    
+    in_ellipse = (y_rot**2 / safe_radius_y**2 + x_rot**2 / safe_radius_x**2) <= 1.0
 
-    return in_length & in_radius
+    return in_length & in_ellipse
 
 
 def visualize_slices(mask, title_prefix="Slice"):

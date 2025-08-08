@@ -1,6 +1,6 @@
 import sys, os, time, math, random
 import numpy as np
-from shape3d import cylinder_mask, cuboid_mask
+from shape3d import elliptical_cylinder_mask, cuboid_mask
 import pyvista as pv
 from multiprocessing import Process, Queue
 import cupy as cp
@@ -14,6 +14,35 @@ sys.path.append(os.path.join(project_root, 'build', 'Release'))
 
 import mybindings as bindings
 
+# Add this after the Config class:
+SHAPE_CONFIGS = {
+    'cuboid': {
+        'struct': [
+            (1, 59),    # cuboid_depth
+            (1, 62),    # cuboid_height  
+            (1, 62),    # cuboid_width
+            (1, 180),   # yaw
+            (1, 180),   # pitch
+            (0, 10),    # taper_width
+            (0, 10),    # taper_height
+        ],
+        'param_names': ['cuboid_depth', 'cuboid_height', 'cuboid_width', 'yaw', 'pitch', 'taper_width', 'taper_height']
+    },
+    'ellipsoid': {
+        'struct': [
+            (1, 59),    # cylinder_length
+            (1, 61),    # radius_y
+            (1, 61),    # radius_x  
+            (1, 180),   # yaw
+            (1, 180),   # pitch
+            (0, 10),   # taper_z (float for ellipsoid)
+            (0, 0),     # unused (keep 7 params for consistency)
+        ],
+        'param_names': ['cylinder_length', 'radius_y', 'radius_x', 'yaw', 'pitch', 'taper_z', 'unused']
+    }
+}
+
+# Update Config class:
 class Config:
     def __init__(self):
         self.dails = False
@@ -27,6 +56,15 @@ class Config:
         self.sigma = 30
         self.alpha = 1
         self.num_processes = 5 
+        self.shape = 'cuboid'  # Add this
+        
+    @property
+    def struct(self):
+        return SHAPE_CONFIGS[self.shape]['struct']
+    
+    @property  
+    def param_names(self):
+        return SHAPE_CONFIGS[self.shape]['param_names']
 
 config = Config()
 
@@ -47,9 +85,6 @@ def eval2(m, use_dials=None):
     """
     if use_dials is None:
         use_dials = config.dails
-    
-    print("WOOOOOOOOOOOOOOOOOOO", use_dials)
-    print(f"DEBUG: eval2 using {'DIJKSTRA' if use_dials else 'EDT'} algorithm")
     
     def get_obstacles_indices(m):
         """Returns a list of obstacles (0=obstacle, 1=traversible) in 1D array indexing style"""
@@ -75,18 +110,15 @@ def eval2(m, use_dials=None):
         return sources 
         
     if use_dials:
-        print("dials")
         N, M, K = m.shape
         CPP_INT_MAX = 2147483647 # from std::numeric_limits<int>::max(), for obstacle nodes
-
-        adj = bindings.makeAdjMatrix3D(N, M, K, get_obstacles_indices(m))
-        distance_transform = bindings.dialsDijkstra3D(adj, generate_sources(m), N, M, K)
+        obstacles = get_obstacles_indices(m)
         
+        distance_transform = bindings.dialsDijkstra3D_Implicit(generate_sources(m), obstacles, N, M, K)
         filtered_distance_transform = [d for d in distance_transform if 0 < d < CPP_INT_MAX]
-        
+
         return np.mean(filtered_distance_transform)
     else:
-        print("EDT")
         m_gpu = cp.asarray(m)
         m_gpu = m_gpu.copy()
         m_gpu[m_gpu == 0] = cp.nan  # mark ridge
@@ -113,26 +145,15 @@ def fitness(m, c_count, use_dials) -> float:
     """
     penalty = 0
     if c_count < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
-        print("penalty")
         penalty = (m.shape[0]*m.shape[1]*m.shape[2] - c_count) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
     return (eval1(m) + eval2(m, use_dials) + penalty)
 
-struct = [
-    (1, 59),
-    (1, 62),
-    (1, 62),
-    (1, 180),
-    (1, 180),
-    (0, 10),
-    (0, 10),
-]
-
 def initialize_pop(pop_size: int) -> list:
-    bounds = np.array(struct)
+    bounds = np.array(config.struct)  # Use config.struct instead of global struct
     lows = bounds[:, 0]
     highs = bounds[:, 1] + 1
     
-    pop = np.random.randint(low=lows[:, None], high=highs[:, None], size=(len(struct), pop_size)).T
+    pop = np.random.randint(low=lows[:, None], high=highs[:, None], size=(len(config.struct), pop_size)).T
     return pop
 
 def tournament_selection(generation, tournament_size=3):
@@ -155,7 +176,7 @@ def crossover(parent1, parent2):
 
 def mutation(chrom):
     idx = random.randint(0, len(chrom) - 1)
-    min_val, max_val = struct[idx]
+    min_val, max_val = config.struct[idx]  # Use config.struct
     chrom[idx] = random.randint(min_val, max_val)
     return chrom
 
@@ -189,30 +210,47 @@ def penalize_drift_sharing(pop: np.ndarray, fitnesses: np.ndarray, sigma: float,
 def is_in_population(chromosome, population):
     return np.any(np.all(population == chromosome, axis=1))
     
-def create_ridge(m_shape, individual_batch, process_index, use_dials, queue):
+def create_ridge(m_shape, individual_batch, process_index, use_dials, shape_type, queue):
     result = [None]*len(individual_batch)
     for idx, individual in enumerate(individual_batch):
         mc = np.ones(m_shape)
-        r = cuboid_mask(matrix=mc,
-                        base_z=0,
-                        base_y=mc.shape[1] // 2,
-                        base_x=mc.shape[2] // 2,
-                        cuboid_depth=individual[0],
-                        cuboid_height=individual[1],
-                        cuboid_width=individual[2],
-                        yaw=individual[3],
-                        pitch=individual[4],
-                        roll=0,
-                        taper_width=individual[5],
-                        taper_height=individual[6])
+        
+        # Shape-specific mask creation
+        if shape_type == 'cuboid':
+            r = cuboid_mask(matrix=mc,
+                            base_z=0,
+                            base_y=mc.shape[1] // 2,
+                            base_x=mc.shape[2] // 2,
+                            cuboid_depth=individual[0],
+                            cuboid_height=individual[1],
+                            cuboid_width=individual[2],
+                            yaw=individual[3],
+                            pitch=individual[4],
+                            roll=0,
+                            taper_width=individual[5],
+                            taper_height=individual[6])
+        
+        elif shape_type == 'ellipsoid':
+            r = elliptical_cylinder_mask(matrix=mc,
+                                        base_z=0,
+                                        base_y=mc.shape[1] // 2,
+                                        base_x=mc.shape[2] // 2,
+                                        cylinder_length=individual[0],
+                                        radius_y=individual[1],
+                                        radius_x=individual[2],
+                                        yaw=individual[3],
+                                        pitch=individual[4],
+                                        roll=0,
+                                        taper_z=individual[5])
+        else:
+            raise ValueError(f"Unknown shape type: {shape_type}")
+            
         mc[r] = 0
         c = np.sum(mc == 1)
         f = fitness(mc, c, use_dials)
         result[idx] = f
-        print(f)
-    print(result)
     queue.put((process_index,result))
-        
+
 def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m_shape):
     queue = Queue()
     processes = []
@@ -223,7 +261,8 @@ def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m
             end = pop_size
         else:
             end = start + process_chunk_size
-        p = Process(target=create_ridge, args=(m_shape, pop[start:end], process_index, config.dails, queue))
+        # Pass shape type to worker
+        p = Process(target=create_ridge, args=(m_shape, pop[start:end], process_index, config.dails, config.shape, queue))
         processes.append(p)
         p.start()
     for p in processes:
@@ -362,6 +401,7 @@ def GA_dispatch():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run GA with specific configuration')
     parser.add_argument('--experiment', type=str, required=True, help='Experiment name')
+    parser.add_argument('--shape', type=str, default='cuboid', choices=['cuboid', 'ellipsoid'], help='Shape type')
     parser.add_argument('--use_dials', type=str, default='False', help='Use DIALS algorithm (True/False)')
     parser.add_argument('--generations', type=int, default=10, help='Number of generations')
     parser.add_argument('--pop_size', type=int, default=20, help='Population size')
@@ -382,6 +422,7 @@ if __name__ == "__main__":
     
     # Update global config
     config.dails = use_dials_bool
+    config.shape = args.shape
     config.generations = args.generations
     config.pop_size = args.pop_size
     config.elite_size = args.elite_size          
@@ -396,10 +437,11 @@ if __name__ == "__main__":
     print("=" * 60)
     print(f"EXPERIMENT: {args.experiment}")
     print("=" * 60)
+    print(f"config.shape: {config.shape}")
     print(f"config.dails: {config.dails}")
     print(f"config.generations: {config.generations}")
     print(f"config.pop_size: {config.pop_size}")
-    print(f"Number of runs: {args.num_runs}")
+    print(f"Structure: {config.param_names}")
     print("=" * 60)
     
     all_results = []

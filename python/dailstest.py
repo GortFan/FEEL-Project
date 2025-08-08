@@ -23,8 +23,6 @@ def get_obstacles_indices(m):
                             obstacle_positions_3D[2])
     print(obstacle_positions_1D.tolist())
     return obstacle_positions_1D.tolist()
-    
-adj = bindings.makeAdjMatrix3D(N, M, K, get_obstacles_indices(m))
 
 def generate_sources(m):
     """Returns a list of source nodes in 1D array indexing style"""
@@ -42,7 +40,7 @@ def generate_sources(m):
 
 sources = generate_sources(m)
 
-dt = bindings.dialsDijkstra3D(adj, sources, N, M, K)
+dt = bindings.dialsDijkstra3D_Implicit(sources, get_obstacles_indices(m), N, M, K)
 dt_array = np.array(dt)
 dt_filtered = dt_array[(dt_array != 0) & (dt_array != max_int)]
 avg_dt = np.mean(dt_filtered)

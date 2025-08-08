@@ -92,3 +92,72 @@ std::vector<int> dialsDijkstra3D(const std::vector<std::vector<std::pair<int, in
 
     return dist;
 }
+
+std::vector<std::pair<int, int>> getNeighbors3D(int u, int N, int M, int K, 
+                                                const std::unordered_set<int>& obstacles) {
+    static const std::vector<std::tuple<int, int, int, int>> moore_offsets = []() {
+        std::vector<std::tuple<int, int, int, int>> offsets;
+        for (int dx = -1; dx <= 1; ++dx) {
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dz = -1; dz <= 1; ++dz) {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    int weight = static_cast<int>(10 * std::sqrt(dx*dx + dy*dy + dz*dz));
+                    offsets.emplace_back(dx, dy, dz, weight);
+                }
+            }
+        }
+        return offsets;
+    }();
+    
+    std::vector<std::pair<int, int>> neighbors;
+    int x = u / (M * K);
+    int y = (u % (M * K)) / K;
+    int z = u % K;
+    
+    for (const auto& [dx, dy, dz, weight] : moore_offsets) {
+        int nx = x + dx, ny = y + dy, nz = z + dz;
+        if (nx < 0 || nx >= N || ny < 0 || ny >= M || nz < 0 || nz >= K) continue;
+        int v = nx * M * K + ny * K + nz;
+        if (obstacles.count(v)) continue;
+        neighbors.emplace_back(v, weight);
+    }
+    return neighbors;
+}
+
+std::vector<int> dialsDijkstra3D_Implicit(const std::vector<int>& sources, 
+                                         const std::vector<int>& obstacle_indices,
+                                         int N, int M, int K) {
+    std::unordered_set<int> obstacles(obstacle_indices.begin(), obstacle_indices.end());
+    const int INF = std::numeric_limits<int>::max();
+    std::vector<int> dist(N * M * K, INF);
+    const int MAX_EDGE_WEIGHT = 17;
+    int maxDist = MAX_EDGE_WEIGHT * 1000;
+    
+    std::vector<std::deque<int>> buckets(maxDist + 1);
+    int currentBucket = 0;
+    
+    for (int src : sources) {
+        dist[src] = 0;
+        buckets[0].push_back(src);
+    }
+    
+    while (currentBucket <= maxDist) {
+        while (currentBucket <= maxDist && buckets[currentBucket].empty())
+            ++currentBucket;
+        if (currentBucket > maxDist) break;
+        
+        int u = buckets[currentBucket].front();
+        buckets[currentBucket].pop_front();
+        
+        if (dist[u] < currentBucket) continue;
+        
+        // Generate neighbors on-the-fly!
+        for (auto [v, w] : getNeighbors3D(u, N, M, K, obstacles)) {
+            if (dist[u] + w < dist[v]) {
+                dist[v] = dist[u] + w;
+                buckets[dist[v]].push_back(v);
+            }
+        }
+    }
+    return dist;
+}
