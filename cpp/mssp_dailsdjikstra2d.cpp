@@ -31,18 +31,18 @@ std::vector<std::vector<std::pair<int, int>>> makeAdjMatrix2D(
         for (int y = 0; y < M; ++y) {
             for (int z = 0; z < K; ++z) {
                 int u = index(x, y, z);
-                if (obstacles.count(u)) continue; // skip obstacle nodes
+                if (obstacles.count(u)) continue; 
 
                 // Moore neighborhood: all 26 neighbors (excluding self)
                 for (int dx = -1; dx <= 1; ++dx) {
                     for (int dy = -1; dy <= 1; ++dy) {
                         for (int dz = -1; dz <= 1; ++dz) {
-                            if (dx == 0 && dy == 0 && dz == 0) continue; // skip self
+                            if (dx == 0 && dy == 0 && dz == 0) continue;
                             int nx = x + dx, ny = y + dy, nz = z + dz;
                             if (nx < 0 || nx >= N || ny < 0 || ny >= M || nz < 0 || nz >= K)
                                 continue;
                             int v = index(nx, ny, nz);
-                            if (obstacles.count(v)) continue; // skip obstacles
+                            if (obstacles.count(v)) continue;
                             int weight = static_cast<int>(10 * std::sqrt(dx*dx + dy*dy + dz*dz));
                             adj[u].emplace_back(v, weight);
                         }
@@ -53,16 +53,6 @@ std::vector<std::vector<std::pair<int, int>>> makeAdjMatrix2D(
     }
     return adj;
 }
-
-// vector<int> generateSources(int count, int size) {
-//     vector<int> sources;
-//     random_device rd;
-//     mt19937 gen(rd());
-//     uniform_int_distribution<> dis(0, size - 1);
-//     for (int i = 0; i < count; ++i)
-//         sources.push_back(dis(gen));
-//     return sources;
-// }
 
 int index2D(int x, int y, int z, int M, int K) {
     return x * M * K + y * K + z;

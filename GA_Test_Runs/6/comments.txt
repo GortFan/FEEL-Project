@@ -1,0 +1,2 @@
+ellipsoid with 50 population with 100 generations. the results so far (stopped early) show a lack of stability/consistency. I think its because 50 population size.
+Redoing with 100x100.

@@ -31,18 +31,18 @@ std::vector<std::vector<std::pair<int, int>>> makeAdjMatrix3D(
         for (int y = 0; y < M; ++y) {
             for (int z = 0; z < K; ++z) {
                 int u = index(x, y, z);
-                if (obstacles.count(u)) continue; // skip obstacle nodes
+                if (obstacles.count(u)) continue;
 
                 // Moore neighborhood: all 26 neighbors (excluding self)
                 for (int dx = -1; dx <= 1; ++dx) {
                     for (int dy = -1; dy <= 1; ++dy) {
                         for (int dz = -1; dz <= 1; ++dz) {
-                            if (dx == 0 && dy == 0 && dz == 0) continue; // skip self
+                            if (dx == 0 && dy == 0 && dz == 0) continue;
                             int nx = x + dx, ny = y + dy, nz = z + dz;
                             if (nx < 0 || nx >= N || ny < 0 || ny >= M || nz < 0 || nz >= K)
                                 continue;
                             int v = index(nx, ny, nz);
-                            if (obstacles.count(v)) continue; // skip obstacles
+                            if (obstacles.count(v)) continue;
                             int weight = static_cast<int>(10 * std::sqrt(dx*dx + dy*dy + dz*dz));
                             adj[u].emplace_back(v, weight);
                         }
@@ -151,7 +151,6 @@ std::vector<int> dialsDijkstra3D_Implicit(const std::vector<int>& sources,
         
         if (dist[u] < currentBucket) continue;
         
-        // Generate neighbors on-the-fly!
         for (auto [v, w] : getNeighbors3D(u, N, M, K, obstacles)) {
             if (dist[u] + w < dist[v]) {
                 dist[v] = dist[u] + w;

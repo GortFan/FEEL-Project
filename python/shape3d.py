@@ -35,19 +35,16 @@ def cuboid_mask(matrix, base_z, base_y, base_x, cuboid_depth, cuboid_height, cub
     """
     depth, height, width = matrix.shape
 
-    # Create coordinate grid
     zz, yy, xx = np.meshgrid(
         np.arange(depth), np.arange(height), np.arange(width), indexing='ij'
     )
 
-    # Shift origin to base
     z = zz - base_z
     y = yy - base_y
     x = xx - base_x
 
     coords = np.stack([z, y, x], axis=-1)
 
-    # Rotation matrices
     yaw_rad, pitch_rad, roll_rad = np.deg2rad([yaw, pitch, roll])
     Rz = np.array([[np.cos(yaw_rad), -np.sin(yaw_rad), 0],
                    [np.sin(yaw_rad),  np.cos(yaw_rad), 0],
@@ -60,23 +57,18 @@ def cuboid_mask(matrix, base_z, base_y, base_x, cuboid_depth, cuboid_height, cub
                    [0, np.sin(roll_rad),  np.cos(roll_rad)]])
 
     R = Rz @ Ry @ Rx
-    R_inv = R.T  # inverse rotation
+    R_inv = R.T  
 
-    # Apply inverse rotation
     coords_rot = np.tensordot(coords, R_inv, axes=([3], [1]))
     z_rot, y_rot, x_rot = coords_rot[..., 0], coords_rot[..., 1], coords_rot[..., 2]
 
-    # Check z bounds
     in_depth = (z_rot >= 0) & (z_rot <= cuboid_depth)
 
-    # Normalized depth fraction (clip to [0, 1] to avoid overshooting)
     depth_frac = np.clip(z_rot / cuboid_depth, 0.0, 1.0)
 
-    # Compute half-sizes with tapering applied
     half_w = (cuboid_width * (1.0 - taper_width * depth_frac)) / 2.0
     half_h = (cuboid_height * (1.0 - taper_height * depth_frac)) / 2.0
 
-    # Ensure dimensions are non-negative
     half_w = np.clip(half_w, a_min=0.0, a_max=None)
     half_h = np.clip(half_h, a_min=0.0, a_max=None)
 
@@ -108,13 +100,11 @@ def elliptical_cylinder_mask(matrix, base_z, base_y, base_x, cylinder_length,
         np.arange(depth), np.arange(height), np.arange(width), indexing='ij'
     )
 
-    # Shift to base
     z = zz - base_z
     y = yy - base_y
     x = xx - base_x
     coords = np.stack([z, y, x], axis=-1)
 
-    # Rotation (same as before)
     yaw_rad, pitch_rad, roll_rad = np.deg2rad([yaw, pitch, roll])
     Rz = np.array([[np.cos(yaw_rad), -np.sin(yaw_rad), 0],
                    [np.sin(yaw_rad),  np.cos(yaw_rad), 0],
@@ -131,18 +121,14 @@ def elliptical_cylinder_mask(matrix, base_z, base_y, base_x, cylinder_length,
     coords_rot = np.tensordot(coords, R_inv, axes=([3], [1]))
     z_rot, y_rot, x_rot = coords_rot[..., 0], coords_rot[..., 1], coords_rot[..., 2]
 
-    # Simple, intuitive tapering along z-axis only
     z_frac = np.clip(z_rot / cylinder_length, 0.0, 1.0)
     local_radius_y = radius_y * (1.0 - taper_z * z_frac)
     local_radius_x = radius_x * (1.0 - taper_z * z_frac)
     local_radius_y = np.clip(local_radius_y, a_min=0.0, a_max=None)
     local_radius_x = np.clip(local_radius_x, a_min=0.0, a_max=None)
 
-    # Check bounds
     in_length = (z_rot >= 0) & (z_rot <= cylinder_length)
     
-    # Ellipse equation: (y/a)² + (x/b)² ≤ 1
-    # Avoid division by zero
     safe_radius_y = np.where(local_radius_y > 0, local_radius_y, 1e-10)
     safe_radius_x = np.where(local_radius_x > 0, local_radius_x, 1e-10)
     
@@ -173,12 +159,11 @@ def worker():
     matrix = np.zeros((11, 100, 100))
     K, M, N = matrix.shape
 
-    # Example parameters for 10 masks (varying centroids and sizes)
     mask = np.zeros_like(matrix, dtype=int)
     for i in range(100):
-        centroid_z = 1 + i  # shift z for each mask
-        centroid_y = 10 + i * 8  # shift y for each mask
-        centroid_x = 10 + i * 8  # shift x for each mask
+        centroid_z = 1 + i  
+        centroid_y = 10 + i * 8 
+        centroid_x = 10 + i * 8 
         cuboid_depth = 3 + (i % 3)
         cuboid_height = 10 + (i % 5)
         cuboid_width = 10 + (i % 5)
@@ -208,8 +193,6 @@ def worker():
     paths = bindings.dialsDijkstra(adj, sources, N, M, K)
     path = np.array(paths)
     avg = np.average(path) / 10
-    print(avg)
-    # visualize_slices(mask, title_prefix="Cuboid Mask Slice")
 
 if __name__ == "__main__":
     num_runs = 100
@@ -218,5 +201,4 @@ if __name__ == "__main__":
         futures = [executor.submit(worker) for _ in range(num_runs)]
         results = [f.result() for f in futures]
     end_all = time.time()
-    print("Results:", results)
-    print("Total wall time for 100 parallel runs (1 generation):", end_all - start_all, "seconds")
+

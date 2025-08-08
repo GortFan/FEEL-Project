@@ -21,28 +21,22 @@ def rectangle_mask(matrix, centroid_row, centroid_col, rect_height, rect_width, 
     """
     height, width = matrix.shape
 
-    # Create coordinate grid
     rows = np.arange(height)[:, None]
     cols = np.arange(width)[None, :]
 
-    # Shift grid so centroid is at (0, 0)
     y = rows - centroid_row
     x = cols - centroid_col
 
-    # Convert angle to radians
     theta = np.deg2rad(angle)
     cos_theta = np.cos(theta)
     sin_theta = np.sin(theta)
 
-    # Apply rotation (inverse transform)
     x_rot = cos_theta * x + sin_theta * y
     y_rot = -sin_theta * x + cos_theta * y
 
-    # Rectangle bounds (centered at origin after shift)
     half_h = rect_height / 2.0
     half_w = rect_width / 2.0
 
-    # Tapering logic
     taper_x = np.clip(taper_x, 0.0, 1.0)
     taper_y = np.clip(taper_y, 0.0, 1.0)
 
@@ -67,7 +61,6 @@ def rectangle_mask(matrix, centroid_row, centroid_col, rect_height, rect_width, 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    # Example matrix
     matrix = np.ones((25, 100))
     centroid_row, centroid_col = 0, 50
     rect_height, rect_width = 4, 69

@@ -1,0 +1,2 @@
+Might be better to adjust decay rate to a lower value to allow for more exploration time. 
+So long as final values are consistent across multiple runs a lower value will signal better exploration of the fitness landscape.

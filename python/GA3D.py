@@ -14,28 +14,27 @@ sys.path.append(os.path.join(project_root, 'build', 'Release'))
 
 import mybindings as bindings
 
-# Add this after the Config class:
 SHAPE_CONFIGS = {
     'cuboid': {
         'struct': [
-            (1, 59),    # cuboid_depth
-            (1, 62),    # cuboid_height  
-            (1, 62),    # cuboid_width
-            (1, 180),   # yaw
-            (1, 180),   # pitch
-            (0, 10),    # taper_width
-            (0, 10),    # taper_height
+            (1, 59),    
+            (1, 62),     
+            (1, 62),    
+            (1, 180),   
+            (1, 180),   
+            (0, 10),    
+            (0, 10),    
         ],
         'param_names': ['cuboid_depth', 'cuboid_height', 'cuboid_width', 'yaw', 'pitch', 'taper_width', 'taper_height']
     },
     'ellipsoid': {
         'struct': [
-            (1, 59),    # cylinder_length
-            (1, 61),    # radius_y
-            (1, 61),    # radius_x  
-            (1, 180),   # yaw
-            (1, 180),   # pitch
-            (0, 10),   # taper_z (float for ellipsoid)
+            (1, 59),    
+            (1, 61),    
+            (1, 61),      
+            (1, 180),   
+            (1, 180),   
+            (0, 10),   
             (0, 0),     # unused (keep 7 params for consistency)
         ],
         'param_names': ['cylinder_length', 'radius_y', 'radius_x', 'yaw', 'pitch', 'taper_z', 'unused']
@@ -56,7 +55,7 @@ class Config:
         self.sigma = 30
         self.alpha = 1
         self.num_processes = 5 
-        self.shape = 'cuboid'  # Add this
+        self.shape = 'cuboid'  
         
     @property
     def struct(self):
@@ -116,7 +115,6 @@ def eval2(m, use_dials=None):
         
         distance_transform = bindings.dialsDijkstra3D_Implicit(generate_sources(m), obstacles, N, M, K)
         filtered_distance_transform = [d for d in distance_transform if 0 < d < CPP_INT_MAX]
-
         return np.mean(filtered_distance_transform)
     else:
         m_gpu = cp.asarray(m)
@@ -214,8 +212,7 @@ def create_ridge(m_shape, individual_batch, process_index, use_dials, shape_type
     result = [None]*len(individual_batch)
     for idx, individual in enumerate(individual_batch):
         mc = np.ones(m_shape)
-        
-        # Shape-specific mask creation
+
         if shape_type == 'cuboid':
             r = cuboid_mask(matrix=mc,
                             base_z=0,
@@ -261,7 +258,6 @@ def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m
             end = pop_size
         else:
             end = start + process_chunk_size
-        # Pass shape type to worker
         p = Process(target=create_ridge, args=(m_shape, pop[start:end], process_index, config.dails, config.shape, queue))
         processes.append(p)
         p.start()
@@ -289,12 +285,10 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     generation_data = []
     
     for generation_number in range(generation_qty):
-        # Get raw fitnesses (never modify these!)
         raw_fitnesses = parallelize_ridge_evaluation(config.num_processes, np.zeros(pop_size), pop, pop_size, m.shape) # 5 is a magic number must be bound to a config value for different run types
         current_min_idx = np.argmin(raw_fitnesses)
         current_min_fitness = raw_fitnesses[current_min_idx]
         
-        # Update global best using RAW fitnesses
         if current_min_fitness < best_raw_fitness:
             best_raw_fitness = current_min_fitness
             best_chrom = pop[current_min_idx].copy()
@@ -306,21 +300,17 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
             'best_fitness': best_raw_fitness,
             'current_min_fitness': current_min_fitness,
             'best_chromosome': best_chrom,
-            'avg_fitness': np.mean(raw_fitnesses),
-            'std_fitness': np.std(raw_fitnesses),
             'diversity': diversity
         })
         
-        # Create SEPARATE penalized fitnesses for selection
         current_diversity_threshold = diversity_threshold * np.exp(-diversity_decay_rate * generation_number)
         if diversity < current_diversity_threshold and generation_number != generation_qty - 1:
             print("diversity")
             selection_fitnesses = penalize_drift_sharing(pop, raw_fitnesses, sigma, alpha)
         else:
             print("raw fitness is carried over")
-            selection_fitnesses = raw_fitnesses.copy()  # Use copy to be safe
+            selection_fitnesses = raw_fitnesses.copy() 
 
-        # Use penalized fitnesses for selection only
         generation = list(zip(pop.tolist(), selection_fitnesses.tolist()))
         
         children = []
@@ -345,7 +335,6 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
         
         fitness_history.append(best_raw_fitness)
     
-    # For final reporting, use raw fitnesses
     final_raw_fitnesses = parallelize_ridge_evaluation(config.num_processes, np.zeros(pop_size), pop, pop_size, m.shape)
     
     df = pd.DataFrame(generation_data)
@@ -354,7 +343,6 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     df.to_csv(filename, index=False)
     print(f"Fitness history saved to {filename}")
     
-    # Debug with raw fitnesses
     min_fitness_idx = np.argmin(final_raw_fitnesses)
     min_fitness = final_raw_fitnesses[min_fitness_idx]
     best_chromosome = pop[min_fitness_idx].tolist()
@@ -364,7 +352,6 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     print(f"Final generation best fitness: {min_fitness}")
     print(f"Final generation best chromosome: {best_chromosome}")
     
-    # Return the correct global best
     return best_raw_fitness, best_chrom.tolist(), list(zip(pop.tolist(), final_raw_fitnesses.tolist())), fitness_history
 
 def GA_dispatch():
@@ -417,10 +404,8 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Convert string to boolean
     use_dials_bool = args.use_dials.lower() == 'true'
     
-    # Update global config
     config.dails = use_dials_bool
     config.shape = args.shape
     config.generations = args.generations

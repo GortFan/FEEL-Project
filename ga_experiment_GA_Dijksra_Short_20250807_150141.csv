@@ -1,2 +1,0 @@
-experiment,run,seed,use_dials,generations,pop_size,best_fitness,best_chromosome,run_time_minutes
-GA_Dijksra_Short,1,4235,True,100,100,308.7951154352221,"[59, 61, 62, 141, 115, 0, 0]",64.36966540416081

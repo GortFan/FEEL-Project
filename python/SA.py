@@ -28,18 +28,15 @@ def eval1(m) -> float:
 
 def eval2(m) -> float:
     m = m.copy()
-    m[m == 0] = np.nan #mark ridge
+    m[m == 0] = np.nan 
     
-    #append oxygen layer
     o_src = np.zeros([1, m.shape[1]]) 
     m2 = np.append(m, o_src, axis=0) 
     
-    #create mask with ridge against not ridge
     nans = np.isnan(m2)
     
     edt2 = sp.distance_transform_edt(m2)
     
-    #remove ridge from matrix
     edt2[nans] = 0
     
     edt2_nz = edt2[edt2 != 0]
@@ -61,18 +58,17 @@ def perturb(solution_signature):
     i = random.randint(0, len(solution_signature)-1)
     low, high = struct[i]
     
-    # +-1 change
     delta = random.choice([-1,1])
     new_val = new_signature[i] + delta
     
-    # clip to bounds of struct
+
     new_signature[i] = max(low, min(high, new_val))
     return new_signature
     
 def SimulatedAnnealing(m, T_max, T_min, E_th, alpha):
-    # SA Init
+
     solution = initialize_man([136, 95, 10, 10], 36.39819591445758)
-    # solution = (initialize_random(), float('inf'))
+
     mc = m.copy()
     r = rectangle_mask(m, 0, 50, solution[0][0], solution[0][1], 0, solution[0][2] // 10, solution[0][3] // 10)
     mc[r] = 0
@@ -80,7 +76,7 @@ def SimulatedAnnealing(m, T_max, T_min, E_th, alpha):
     f = fitness(mc, c, alpha)
     solution = (solution[0], f)
     T = T_max
-    # Main SA workflow
+
     while T > T_min and solution[1] > E_th:
         new_signature = perturb(solution_signature=solution[0])
         mc = m.copy()
@@ -99,9 +95,6 @@ def SimulatedAnnealing(m, T_max, T_min, E_th, alpha):
 if __name__ == "__main__":
     import collections
 
-    # random.seed(42)
-    # np.random.seed(42)
-    
     m = np.ones((101, 100))
     m[0, :] = 0
     

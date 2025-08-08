@@ -15,9 +15,8 @@ bounds = np.array(struct)
 
 class Particle:
     def __init__(self):
-        # Initialize position randomly as floats inside bounds
         lows = bounds[:, 0]
-        highs = bounds[:, 1] + 1  # keep +1 for randint style upper bound
+        highs = bounds[:, 1] + 1  
         self.position = np.random.uniform(low=lows, high=highs)
         self.velocity = np.zeros_like(self.position)
         self.best_position = self.position.copy()
@@ -48,18 +47,15 @@ def eval1(m) -> float:
 
 def eval2(m) -> float:
     m = m.copy()
-    m[m == 0] = np.nan #mark ridge
+    m[m == 0] = np.nan 
     
-    #append oxygen layer
     o_src = np.zeros([1, m.shape[1]]) 
     m2 = np.append(m, o_src, axis=0) 
     
-    #create mask with ridge against not ridge
     nans = np.isnan(m2)
     
     edt2 = sp.distance_transform_edt(m2)
     
-    #remove ridge from matrix
     edt2[nans] = 0
     
     edt2_nz = edt2[edt2 != 0]

@@ -1,2 +1,0 @@
-experiment,run,seed,use_dials,generations,pop_size,best_fitness,best_chromosome,run_time_minutes
-GA_EDT_Ellipsoid,1,6258,True,100,50,235.79203975433728,"[39, 61, 61, 174, 177, 0, 0]",31.304751312732698
