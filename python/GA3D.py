@@ -283,26 +283,25 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     best_chrom = None
     fitness_history = []
     generation_data = []
-    
+
     for generation_number in range(generation_qty):
-        raw_fitnesses = parallelize_ridge_evaluation(config.num_processes, np.zeros(pop_size), pop, pop_size, m.shape) # 5 is a magic number must be bound to a config value for different run types
+        raw_fitnesses = parallelize_ridge_evaluation(config.num_processes, np.zeros(pop_size), pop, pop_size, m.shape)
         current_min_idx = np.argmin(raw_fitnesses)
         current_min_fitness = raw_fitnesses[current_min_idx]
-        
+
         if current_min_fitness < best_raw_fitness:
             best_raw_fitness = current_min_fitness
             best_chrom = pop[current_min_idx].copy()
-        
+
         diversity = compute_diversity(pop)
-        
+
         generation_data.append({
             'generation': generation_number,
             'best_fitness': best_raw_fitness,
             'current_min_fitness': current_min_fitness,
-            'best_chromosome': best_chrom,
+            'best_chromosome': best_chrom.tolist() if best_chrom is not None else None,
             'diversity': diversity
         })
-        
         current_diversity_threshold = diversity_threshold * np.exp(-diversity_decay_rate * generation_number)
         if diversity < current_diversity_threshold and generation_number != generation_qty - 1:
             print("diversity")
@@ -336,22 +335,28 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
         fitness_history.append(best_raw_fitness)
     
     final_raw_fitnesses = parallelize_ridge_evaluation(config.num_processes, np.zeros(pop_size), pop, pop_size, m.shape)
+    current_min_idx = np.argmin(raw_fitnesses)
+    current_min_fitness = raw_fitnesses[current_min_idx]
+
+    if current_min_fitness < best_raw_fitness:
+        best_raw_fitness = current_min_fitness
+        best_chrom = pop[current_min_idx].copy()
+
+    diversity = compute_diversity(pop)
+
+    generation_data.append({
+        'generation': generation_number+1,
+        'best_fitness': best_raw_fitness,
+        'current_min_fitness': current_min_fitness,
+        'best_chromosome': best_chrom.tolist() if best_chrom is not None else None,
+        'diversity': diversity
+    })
     
     df = pd.DataFrame(generation_data)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     filename = f"Individual_Run_Fitness_History_{timestamp}.csv"
     df.to_csv(filename, index=False)
-    print(f"Fitness history saved to {filename}")
-    
-    min_fitness_idx = np.argmin(final_raw_fitnesses)
-    min_fitness = final_raw_fitnesses[min_fitness_idx]
-    best_chromosome = pop[min_fitness_idx].tolist()
-    
-    print(f"Global best fitness: {best_raw_fitness}")
-    print(f"Global best chromosome: {best_chrom}")
-    print(f"Final generation best fitness: {min_fitness}")
-    print(f"Final generation best chromosome: {best_chromosome}")
-    
+
     return best_raw_fitness, best_chrom.tolist(), list(zip(pop.tolist(), final_raw_fitnesses.tolist())), fitness_history
 
 def GA_dispatch():
