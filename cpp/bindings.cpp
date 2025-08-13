@@ -19,7 +19,7 @@ std::vector<int> dialsDijkstra3D_Implicit(const std::vector<int>& sources, const
 
 std::vector<int> dialsDijkstra3D_CUDA(const std::vector<int>& sources, const std::vector<int>& obstacle_indices, int N, int M, int K);
 
-PYBIND11_MODULE(mybindings, m) {
+PYBIND11_MODULE(FEELcpp, m) {
     m.def("index", &index2D, "A function that converts matrix coordinates to flattened array index values");
     m.def("makeAdjMatrix", &makeAdjMatrix2D, "Creates an adjacency matrix for a given 2D matrix dimension");
     m.def("dialsDijkstra", &dialsDijkstra2D, "Performs dials algorithm on the 2D adjacency matrix, given a set of source coordinates");

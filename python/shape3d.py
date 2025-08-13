@@ -1,17 +1,7 @@
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 import time
-import sys
-import os
 import concurrent.futures
-
-# Get the parent directory (D:/TMUFEEL)
-project_root = os.path.dirname(os.path.dirname(__file__))
-
-# Add build/Release to sys.path
-sys.path.append(os.path.join(project_root, 'build', 'Release'))
-
-import mybindings as bindings
 
 def cuboid_mask(matrix, base_z, base_y, base_x, cuboid_depth, cuboid_height, cuboid_width,
                 yaw=0.0, pitch=0.0, roll=0.0, taper_width=0.0, taper_height=0.0):
@@ -135,70 +125,4 @@ def elliptical_cylinder_mask(matrix, base_z, base_y, base_x, cylinder_length,
     in_ellipse = (y_rot**2 / safe_radius_y**2 + x_rot**2 / safe_radius_x**2) <= 1.0
 
     return in_length & in_ellipse
-
-
-def visualize_slices(mask, title_prefix="Slice"):
-    """
-    Visualize each Z slice of a 3D boolean mask using matplotlib.
-
-    Parameters:
-        mask (np.ndarray): 3D boolean mask (Z, Y, X).
-        title_prefix (str): Prefix for the plot title.
-    """
-    import matplotlib.pyplot as plt
-
-    num_slices = mask.shape[0]
-    for z in range(num_slices):
-        plt.imshow(mask[z], cmap='gray')
-        plt.title(f"{title_prefix} z={z}")
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.show()
-
-def worker():
-    matrix = np.zeros((11, 100, 100))
-    K, M, N = matrix.shape
-
-    mask = np.zeros_like(matrix, dtype=int)
-    for i in range(100):
-        centroid_z = 1 + i  
-        centroid_y = 10 + i * 8 
-        centroid_x = 10 + i * 8 
-        cuboid_depth = 3 + (i % 3)
-        cuboid_height = 10 + (i % 5)
-        cuboid_width = 10 + (i % 5)
-        yaw, pitch, roll = 90, 0, 0
-        mask_i = cuboid_mask(
-            matrix,
-            centroid_z,
-            centroid_y,
-            centroid_x,
-            cuboid_depth,
-            cuboid_height,
-            cuboid_width,
-            yaw,
-            pitch,
-            roll
-        )
-        mask = np.logical_or(mask, mask_i).astype(int)
-
-    x, y, z = np.where(mask == 1)
-    obstacle_indices = [bindings.index(int(xi), int(yi), int(zi), M, K) for xi, yi, zi in zip(x, y, z)]
-    adj = bindings.makeAdjMatrix(N, M, K, obstacle_indices)
-    sources = [
-        bindings.index(x, y, K - 1, M, K)
-        for x in range(N)
-        for y in range(M)
-    ]
-    paths = bindings.dialsDijkstra(adj, sources, N, M, K)
-    path = np.array(paths)
-    avg = np.average(path) / 10
-
-if __name__ == "__main__":
-    num_runs = 100
-    start_all = time.time()
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = [executor.submit(worker) for _ in range(num_runs)]
-        results = [f.result() for f in futures]
-    end_all = time.time()
 

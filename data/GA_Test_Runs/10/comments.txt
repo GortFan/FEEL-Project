@@ -1,0 +1,7 @@
+unfortunately 24 hours later i found a better solution through basic testing manually (took less than 2 minutes to find a line that produces a better soln).
+I noticed that taper was not done properly (ie result is not divided by 10 to produce a number between 0 and 1 inclusive). 
+Fixing this for next run and adjusting the dimension limits to allow for better exploration.
+In particular I have soft remove limits for 'xy' on both shape parent classes while left the z limit (since this is a hard design limit based on system constraints)
+
+further, there is a particular edge case where the ridge may block a part of usable catalyst or void from being accessed by the oxygen layer diffusion path
+in this event, do not mark these void spaces as dead. it should be marked as a uint32_max or something along those lines so its counted against the algorithm to discourage dead catalysts.

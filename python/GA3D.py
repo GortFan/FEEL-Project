@@ -12,16 +12,16 @@ project_root = os.path.dirname(os.path.dirname(__file__))
 
 sys.path.append(os.path.join(project_root, 'build', 'Release'))
 
-import mybindings as bindings
+import FEELcpp as fc
 
 SHAPE_CONFIGS = {
     'cuboid': {
         'struct': [
-            (1, 59),    
-            (1, 62),     
-            (1, 62),    
-            (1, 180),   
-            (1, 180),   
+            (1, 60),    
+            (1, 1000),     
+            (1, 100),    
+            (0, 180),   
+            (0, 180),   
             (0, 10),    
             (0, 10),    
         ],
@@ -29,11 +29,11 @@ SHAPE_CONFIGS = {
     },
     'ellipsoid': {
         'struct': [
-            (1, 59),    
-            (1, 61),    
-            (1, 61),      
-            (1, 180),   
-            (1, 180),   
+            (1, 60),    
+            (1, 1000),    
+            (1, 1000),      
+            (0, 180),   
+            (0, 180),   
             (0, 10),   
             (0, 0),     # unused (keep 7 params for consistency)
         ],
@@ -41,7 +41,6 @@ SHAPE_CONFIGS = {
     }
 }
 
-# Update Config class:
 class Config:
     def __init__(self):
         self.dails = False
@@ -75,7 +74,10 @@ def eval1(m) -> float:
     edt = cp_ndimage.distance_transform_edt(m)
     edt_nz = edt[edt != 0]
     m_edt = cp.mean(edt_nz)
-    return float(m_edt.get()) 
+    m_edt_cpu = float(m_edt.get())
+    if m_edt_cpu != type(float): # handle edge case without restricting solution guess range. use the mean value since converting two data from gpu to cpu is slower than just using the one.
+        return np.iinfo(np.uint32).max
+    return m_edt_cpu
 
 def eval2(m, use_dials=None):
     """
@@ -113,29 +115,31 @@ def eval2(m, use_dials=None):
         CPP_INT_MAX = 2147483647 # from std::numeric_limits<int>::max(), for obstacle nodes
         obstacles = get_obstacles_indices(m)
         
-        distance_transform = bindings.dialsDijkstra3D_Implicit(generate_sources(m), obstacles, N, M, K)
+        distance_transform = fc.dialsDijkstra3D_Implicit(generate_sources(m), obstacles, N, M, K)
         filtered_distance_transform = [d for d in distance_transform if 0 < d < CPP_INT_MAX]
+        if len(filtered_distance_transform) == 0: # handle edge case same as eval1 but use array len since everything is cpu side anyways.
+            return np.iinfo(np.uint32).max
         return np.mean(filtered_distance_transform)
     else:
         m_gpu = cp.asarray(m)
         m_gpu = m_gpu.copy()
-        m_gpu[m_gpu == 0] = cp.nan  # mark ridge
+        m_gpu[m_gpu == 0] = cp.nan  
         
-        # append oxygen layer
         o_src = cp.zeros([1, m_gpu.shape[1], m_gpu.shape[2]]) 
         m2 = cp.append(m_gpu, o_src, axis=0) 
         
-        # create mask with ridge against not ridge
         nans = cp.isnan(m2)
         
         edt2 = cp_ndimage.distance_transform_edt(m2)
         
-        # remove ridge from matrix
         edt2[nans] = 0
         
         edt2_nz = edt2[edt2 != 0]
         m_edt2 = cp.mean(edt2_nz)
-        return float(m_edt2.get())  # Convert back to CPU
+        m_edt_cpu = float(m_edt2.get())
+        if m_edt_cpu != type(float): # handle edge case without restricting solution guess range. use the mean value since converting two data from gpu to cpu is slower than just using the one.
+            return np.iinfo(np.uint32).max
+        return m_edt_cpu
 
 def fitness(m, c_count, use_dials) -> float: 
     """
@@ -224,8 +228,8 @@ def create_ridge(m_shape, individual_batch, process_index, use_dials, shape_type
                             yaw=individual[3],
                             pitch=individual[4],
                             roll=0,
-                            taper_width=individual[5],
-                            taper_height=individual[6])
+                            taper_width=individual[5] / 10,
+                            taper_height=individual[6] / 10)
         
         elif shape_type == 'ellipsoid':
             r = elliptical_cylinder_mask(matrix=mc,
@@ -238,7 +242,7 @@ def create_ridge(m_shape, individual_batch, process_index, use_dials, shape_type
                                         yaw=individual[3],
                                         pitch=individual[4],
                                         roll=0,
-                                        taper_z=individual[5])
+                                        taper_z=individual[5] / 10)
         else:
             raise ValueError(f"Unknown shape type: {shape_type}")
             
