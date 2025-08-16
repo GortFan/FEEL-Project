@@ -133,6 +133,10 @@ std::vector<int> dialsDijkstra3D_Implicit(const std::vector<int>& sources,
     const int MAX_EDGE_WEIGHT = 17;
     int maxDist = MAX_EDGE_WEIGHT * 1000;
     
+    for (int obstacle_idx : obstacle_indices) {
+            dist[obstacle_idx] = INF - 1;  // "fix": mark obstacles diff to trapped voids
+    }     
+    
     std::vector<std::deque<int>> buckets(maxDist + 1);
     int currentBucket = 0;
     
@@ -156,10 +160,7 @@ std::vector<int> dialsDijkstra3D_Implicit(const std::vector<int>& sources,
                 dist[v] = dist[u] + w;
                 buckets[dist[v]].push_back(v);
             }
-        }
-        for (int obstacle_idx : obstacle_indices) {
-            dist[obstacle_idx] = INF - 1;  // "fix v1": mark obstacles diff to trapped voids
-        }       
+        }  
     }
     return dist;
 }
