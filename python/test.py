@@ -152,7 +152,7 @@ class TestDistanceCalc(unittest.TestCase):
     def test_fitness_with_horizontal_blockage(self):
         pass
     
-    def test_fitness_with_2thick_diagonal_blockage(self);
+    def test_fitness_with_2thick_diagonal_blockage(self):
         pass
     
     def test_fitness_with_1thick_diagonal_blockage(self):
