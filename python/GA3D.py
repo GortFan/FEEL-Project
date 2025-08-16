@@ -18,7 +18,7 @@ SHAPE_CONFIGS = {
     'cuboid': {
         'struct': [
             (1, 60),    
-            (1, 1000),     
+            (1, 100),     
             (1, 100),    
             (0, 180),   
             (0, 180),   
@@ -30,8 +30,8 @@ SHAPE_CONFIGS = {
     'ellipsoid': {
         'struct': [
             (1, 60),    
-            (1, 1000),    
-            (1, 1000),      
+            (1, 100),    
+            (1, 100),      
             (0, 180),   
             (0, 180),   
             (0, 10),   
@@ -73,11 +73,10 @@ def eval1(m) -> float:
     m = cp.asarray(m)
     edt = cp_ndimage.distance_transform_edt(m)
     edt_nz = edt[edt != 0]
-    m_edt = cp.mean(edt_nz)
-    m_edt_cpu = float(m_edt.get())
-    if m_edt_cpu != type(float): # handle edge case without restricting solution guess range. use the mean value since converting two data from gpu to cpu is slower than just using the one.
+    if len(edt_nz) == 0:
         return np.iinfo(np.uint32).max
-    return m_edt_cpu
+    m_edt = cp.mean(edt_nz)
+    return float(m_edt.get())
 
 def eval2(m, use_dials=None):
     """
@@ -111,15 +110,19 @@ def eval2(m, use_dials=None):
         return sources 
         
     if use_dials:
-        N, M, K = m.shape
-        CPP_INT_MAX = 2147483647 # from std::numeric_limits<int>::max(), for obstacle nodes
+        obstacle_id = 2147483647-1 # from std::numeric_limits<int>::max(), for obstacle nodes its max-1 and for trapped voids its max
+        o_src = np.ones([1, m.shape[1], m.shape[2]]) 
+        m2 = np.append(m, o_src, axis=0) 
+        obstacles = get_obstacles_indices(m2)
+        N, M, K = m2.shape
+        
         obstacles = get_obstacles_indices(m)
         
-        distance_transform = fc.dialsDijkstra3D_Implicit(generate_sources(m), obstacles, N, M, K)
-        filtered_distance_transform = [d for d in distance_transform if 0 < d < CPP_INT_MAX]
+        distance_transform = fc.dialsDijkstra3D_Implicit(generate_sources(m2), obstacles, N, M, K)
+        filtered_distance_transform = [d for d in distance_transform if 0 < d < obstacle_id]
         if len(filtered_distance_transform) == 0: # handle edge case same as eval1 but use array len since everything is cpu side anyways.
             return np.iinfo(np.uint32).max
-        return np.mean(filtered_distance_transform)
+        return np.mean(filtered_distance_transform) / 10
     else:
         m_gpu = cp.asarray(m)
         m_gpu = m_gpu.copy()

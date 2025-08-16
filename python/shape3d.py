@@ -52,7 +52,7 @@ def cuboid_mask(matrix, base_z, base_y, base_x, cuboid_depth, cuboid_height, cub
     coords_rot = np.tensordot(coords, R_inv, axes=([3], [1]))
     z_rot, y_rot, x_rot = coords_rot[..., 0], coords_rot[..., 1], coords_rot[..., 2]
 
-    in_depth = (z_rot >= 0) & (z_rot <= cuboid_depth)
+    in_depth = (z_rot >= 0) & (z_rot < cuboid_depth)
 
     depth_frac = np.clip(z_rot / cuboid_depth, 0.0, 1.0)
 
@@ -117,7 +117,7 @@ def elliptical_cylinder_mask(matrix, base_z, base_y, base_x, cylinder_length,
     local_radius_y = np.clip(local_radius_y, a_min=0.0, a_max=None)
     local_radius_x = np.clip(local_radius_x, a_min=0.0, a_max=None)
 
-    in_length = (z_rot >= 0) & (z_rot <= cylinder_length)
+    in_length = (z_rot >= 0) & (z_rot < cylinder_length)
     
     safe_radius_y = np.where(local_radius_y > 0, local_radius_y, 1e-10)
     safe_radius_x = np.where(local_radius_x > 0, local_radius_x, 1e-10)

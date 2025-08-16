@@ -157,6 +157,9 @@ std::vector<int> dialsDijkstra3D_Implicit(const std::vector<int>& sources,
                 buckets[dist[v]].push_back(v);
             }
         }
+        for (int obstacle_idx : obstacle_indices) {
+            dist[obstacle_idx] = INF - 1;  // "fix v1": mark obstacles diff to trapped voids
+        }       
     }
     return dist;
 }
