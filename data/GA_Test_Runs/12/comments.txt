@@ -1,0 +1,3 @@
+Not fully happy with this yet.
+Need to adjust sigma, and scheduling params (div threshold and decay rate) to see if we can get better exploration.
+I suspect better solutions exist even if on the surface it looks like the algorithm is "working"
