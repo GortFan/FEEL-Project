@@ -85,7 +85,7 @@ def eval2(m, use_dials=None):
     """
     if use_dials is None:
         use_dials = config.dails
-    
+        
     def get_obstacles_indices(m):
         """Returns a list of obstacles (0=obstacle, 1=traversible) in 1D array indexing style"""
         obstacle_positions_3D = np.where(m == 0)
@@ -219,7 +219,7 @@ def create_ridge(m_shape, individual_batch, process_index, use_dials, shape_type
     result = [None]*len(individual_batch)
     for idx, individual in enumerate(individual_batch):
         mc = np.ones(m_shape)
-
+        mc[0, :, :] = 0
         if shape_type == 'cuboid':
             r = cuboid_mask(matrix=mc,
                             base_z=0,
@@ -285,7 +285,6 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
     mutation_qty = math.ceil(mutation_rate*children_qty)
     
     pop = initialize_pop(pop_size)
-    
     best_raw_fitness = float('inf')
     best_chrom = None
     fitness_history = []
