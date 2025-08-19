@@ -43,7 +43,6 @@ SHAPE_CONFIGS = {
 
 class Config:
     def __init__(self):
-        self.dails = False
         self.generations = 100
         self.pop_size = 100
         self.worst_size = 1
@@ -80,7 +79,7 @@ def eval1(m) -> float:
 
 def eval2(m):
     """
-    Uses custom written dails algorithm in C++ using purely the CPU. 
+    Uses custom written dials algorithm in C++ using purely the CPU. 
     Works for scenarios when obstructions would intercept EDT straight lines.
     """
         
@@ -246,7 +245,7 @@ def parallelize_ridge_evaluation(num_processes: int, fitnesses, pop, pop_size, m
             end = pop_size
         else:
             end = start + process_chunk_size
-        p = Process(target=create_ridge, args=(m_shape, pop[start:end], process_index, config.dails, config.shape, queue))
+        p = Process(target=create_ridge, args=(m_shape, pop[start:end], process_index, config.shape, queue))
         processes.append(p)
         p.start()
     for p in processes:
@@ -348,7 +347,6 @@ def genetic_algorithm(m, generation_qty, pop_size, elite_size, worst_size, mutat
 
 def GA_dispatch():
     print(f"DEBUG: GA_dispatch using config - "
-          f"dails={config.dails}, "
           f"generations={config.generations}, "
           f"pop_size={config.pop_size}, "
           f"elite_size={config.elite_size}, "
@@ -411,7 +409,6 @@ if __name__ == "__main__":
     print(f"EXPERIMENT: {args.experiment}")
     print("=" * 60)
     print(f"config.shape: {config.shape}")
-    print(f"config.dails: {config.dails}")
     print(f"config.generations: {config.generations}")
     print(f"config.pop_size: {config.pop_size}")
     print(f"Structure: {config.param_names}")

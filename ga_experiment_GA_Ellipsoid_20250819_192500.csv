@@ -1,0 +1,2 @@
+experiment,run,seed,generations,pop_size,best_fitness,best_chromosome,run_time_minutes
+GA_Ellipsoid,1,4952,100,100,26.105116890713123,"[59, 98, 97, 18, 13, 8, 0]",48.75537859201431
