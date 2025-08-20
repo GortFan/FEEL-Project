@@ -1,0 +1,2 @@
+experiment,run,seed,generations,pop_size,best_fitness,best_chromosome,run_time_minutes
+GA_Cuboid,1,3522,100,100,31.330168648205955,"[48, 100, 100, 180, 176, 0, 0]",52.42671931187312
