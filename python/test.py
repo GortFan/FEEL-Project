@@ -92,7 +92,7 @@ class TestDistanceCalc(unittest.TestCase):
         self.assertEqual(f, np.iinfo(np.uint32).max*2 + p)
     
     def test_fitness_if_empty_matrix(self):
-        m = np.ones((5, 5, 5))
+        m = np.ones((5,5,5))
         m[0, :, :] = 0
         r = cuboid_mask(matrix=m,
                     base_z=2,
