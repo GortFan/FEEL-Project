@@ -1,0 +1,5 @@
+oops the sharing radius was 30 here. it should be a function of the max diff b/t a min and a max chrom
+aka sqrt(sigma((max-min)^2)).
+anyways for the cuboid which is the larger diff of the two its 436.46
+for ellipsoid its 314.22
+set the sigma in automate.sh
