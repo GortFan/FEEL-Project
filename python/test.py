@@ -156,9 +156,9 @@ class TestDistanceCalc(unittest.TestCase):
         self.assertTrue(e1 == np.iinfo(np.uint32).max)
         self.assertTrue(e2 == np.iinfo(np.uint32).max)
         self.assertTrue(p == m.shape[0]*m.shape[1]*m.shape[2]) # c_usable is 0 and volume < 100 so int div is 0. hi future me, in case u look at this im right so dw abt it
-        
-    def test_old(self):
-        param = [41, 113, 119, 4, 0, 5, 0]
+    
+    def test_res(self):
+        param = [40, 132, 146, 44, 51, 4, 6]
         m = np.ones((61, 124, 124))
         m[0, :, :] = 0
         r = elliptical_cylinder_mask(
@@ -173,9 +173,29 @@ class TestDistanceCalc(unittest.TestCase):
             pitch=param[4],
             roll=0,
             taper_z=param[5] / 10
-        )       
-        m[r] = 0
-        f, e1, e2, p, mssp, edt, c = fitness(m)
-        self.assertTrue(c > 0.35*m.shape[0]*m.shape[1]*m.shape[2])
+        )     
+        c = cuboid_mask(
+            matrix=m,
+            base_z=0,
+            base_y=m.shape[1] // 2,
+            base_x=m.shape[2] // 2,
+            cuboid_depth=param[0],
+            cuboid_height=param[1],
+            cuboid_width=param[2],
+            yaw=param[3],
+            pitch=param[4],
+            roll=0,
+            taper_width=param[5] / 10,
+            taper_height=param[6] / 10
+        )
+        m[c] = 0
+        c_req = (m.shape[0] - 1)*m.shape[1]*m.shape[2]
+        c_curr = np.count_nonzero(m == 1)
+        c_layer = m.shape[1]*m.shape[2]
+        num_layer = math.ceil((c_req - c_curr) / c_layer)
+        m_appended_c = np.append(m, np.ones((num_layer, m.shape[1], m.shape[2])), axis=0)
+        f, e1, e2, p, _, _, c = fitness(m_appended_c)
+        self.assertTrue(c_req <= c)
+        self.assertTrue(m.shape[0] <= m_appended_c.shape[0])
 if __name__ == '__main__':
     unittest.main()
