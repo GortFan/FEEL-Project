@@ -66,25 +66,12 @@ class Config:
 config = Config()
 
 def eval1(m) -> float:
-    """
-    Uses scipy EDT function with CUDA GPU acceleration.
-    """
     m = cp.asarray(m)
     edt = cp_ndimage.distance_transform_edt(m)
-    edt_nz = edt[edt != 0]
-    if len(edt_nz) == 0:
-        return np.iinfo(np.uint32).max
-    m_edt = cp.mean(edt_nz)
-    return float(m_edt.get())
+    return edt.get()
 
 def eval2(m):
-    """
-    Uses custom written dials algorithm in C++ using purely the CPU. 
-    Works for scenarios when obstructions would intercept EDT straight lines.
-    """
-        
     def get_obstacles_indices(m):
-        """Returns a list of obstacles (0=obstacle, 1=traversible) in 1D array indexing style"""
         obstacle_positions_3D = np.where(m == 0)
         _, M, K = m.shape
         obstacle_positions_1D = (obstacle_positions_3D[0] * M * K +
@@ -93,7 +80,6 @@ def eval2(m):
         return obstacle_positions_1D.tolist()
 
     def generate_sources(m):
-        """Returns a list of source nodes in 1D array indexing style"""
         N, M, K = m.shape
         
         last_layer = m[N-1, :, :]
@@ -106,7 +92,6 @@ def eval2(m):
         sources = (x_coords * M * K + y_coords * K + z_coords).tolist()
         return sources 
         
-    obstacle_id = 2147483647-1 # from std::numeric_limits<int>::max(), for obstacle nodes its max-1 and for trapped voids its max
     o_src = np.ones([1, m.shape[1], m.shape[2]]) 
     m2 = np.append(m, o_src, axis=0) 
     obstacles = get_obstacles_indices(m2)
@@ -115,23 +100,38 @@ def eval2(m):
     obstacles = get_obstacles_indices(m)
     
     distance_transform = fc.dialsDijkstra3D_Implicit(generate_sources(m2), obstacles, N, M, K)
-    blocked_voids_count = distance_transform.count(2147483647)
-    
-    filtered_distance_transform = [d for d in distance_transform if 0 < d < obstacle_id]
-    if len(filtered_distance_transform) == 0: # handle edge case same as eval1 but use array len since everything is cpu side anyways.
-        return np.iinfo(np.uint32).max, blocked_voids_count
-    return np.mean(filtered_distance_transform) / 10, blocked_voids_count
+    return distance_transform
 
-def fitness(m, c_count) -> float: 
-    """
-    Encapsulates the eval logic and adds penalty based on catalyst preservation requirements (arbitrary magic number).
-    """
+def fitness(m) -> float: 
+    mssp = eval2(m)
+    mssp = mssp[:-m.shape[1]*m.shape[2]]
+    mssp_mat = np.array(mssp).reshape(m.shape[0], m.shape[1], m.shape[2])
+    dead_c = np.where(mssp_mat == 2147483647)
+    edt = eval1(m)
+    edt[dead_c] = 0
+    
+    # e1
+    edt_nz = edt[edt != 0]
+    if len(edt_nz) == 0:
+        e1 = np.iinfo(np.uint32).max
+    else:
+        e1 = np.mean(edt_nz)
+        
+    # e2
+    obstacle_id = 2147483647-1
+    filtered_distance_transform = [d for d in mssp if 0 < d < obstacle_id]
+    if len(filtered_distance_transform) == 0:
+        e2 = np.iinfo(np.uint32).max
+    else:
+        e2 = np.mean(filtered_distance_transform) / 10
+    
+    # p
     penalty = 0
-    e2, c_dead = eval2(m)
-    c_usable = c_count - c_dead
-    if c_usable < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
-        penalty = (m.shape[0]*m.shape[1]*m.shape[2] - c_usable) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
-    return (eval1(m) + e2 + penalty)
+    usable_c = m.shape[0]*m.shape[1]*m.shape[2] - len(np.where(edt == 0)[0])
+    if usable_c < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
+        penalty = (m.shape[0]*m.shape[1]*m.shape[2] - usable_c) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
+    f = e1 + e2 + penalty
+    return f
 
 def initialize_pop(pop_size: int) -> list:
     bounds = np.array(config.struct)  # Use config.struct instead of global struct
@@ -230,8 +230,7 @@ def create_ridge(m_shape, individual_batch, process_index, shape_type, queue):
             raise ValueError(f"Unknown shape type: {shape_type}")
             
         mc[r] = 0
-        c = np.sum(mc == 1)
-        f = fitness(mc, c)
+        f = fitness(mc)
         result[idx] = f
     queue.put((process_index,result))
 
