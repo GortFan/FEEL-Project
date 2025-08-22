@@ -128,7 +128,7 @@ def fitness(m) -> float:
     # p
     penalty = 0
     usable_c = m.shape[0]*m.shape[1]*m.shape[2] - len(np.where(edt == 0)[0])
-    if usable_c < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
+    if usable_c < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.50):
         penalty = (m.shape[0]*m.shape[1]*m.shape[2] - usable_c) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
     f = e1 + e2 + penalty
     return f
@@ -201,6 +201,7 @@ def create_ridge(m_shape, individual_batch, process_index, shape_type, queue):
         mc = np.ones(m_shape)
         mc[0, :, :] = 0
         if shape_type == 'cuboid':
+            print("cubers")
             r = cuboid_mask(matrix=mc,
                             base_z=0,
                             base_y=mc.shape[1] // 2,
@@ -215,6 +216,7 @@ def create_ridge(m_shape, individual_batch, process_index, shape_type, queue):
                             taper_height=individual[6] / 10)
         
         elif shape_type == 'ellipsoid':
+            print("ellipt")
             r = elliptical_cylinder_mask(matrix=mc,
                                         base_z=0,
                                         base_y=mc.shape[1] // 2,
@@ -230,7 +232,12 @@ def create_ridge(m_shape, individual_batch, process_index, shape_type, queue):
             raise ValueError(f"Unknown shape type: {shape_type}")
             
         mc[r] = 0
-        f = fitness(mc)
+        c_req = (mc.shape[0] - 1)*mc.shape[1]*mc.shape[2]
+        c_curr = np.count_nonzero(mc == 1)
+        c_layer = mc.shape[1]*mc.shape[2]
+        num_layer = math.ceil((c_req - c_curr) / c_layer)
+        m_appended_c = np.append(mc, np.ones((num_layer, mc.shape[1], mc.shape[2])), axis=0)
+        f = fitness(m_appended_c)
         result[idx] = f
     queue.put((process_index,result))
 
