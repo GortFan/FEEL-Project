@@ -14,11 +14,7 @@ def eval1(m) -> float:
     """Returns two values the 1. edt value avg, 2. edt matrix"""
     m = cp.asarray(m)
     edt = cp_ndimage.distance_transform_edt(m)
-    edt_nz = edt[edt != 0]
-    if len(edt_nz) == 0:
-        return np.iinfo(np.uint32).max, edt
-    m_edt = cp.mean(edt_nz)
-    return float(m_edt.get()), edt.get()
+    return edt.get()
 
 def eval2(m):
     def get_obstacles_indices(m):
@@ -42,7 +38,6 @@ def eval2(m):
         sources = (x_coords * M * K + y_coords * K + z_coords).tolist()
         return sources 
         
-    obstacle_id = 2147483647-1
     o_src = np.ones([1, m.shape[1], m.shape[2]]) 
     m2 = np.append(m, o_src, axis=0) 
     obstacles = get_obstacles_indices(m2)
@@ -51,163 +46,136 @@ def eval2(m):
     obstacles = get_obstacles_indices(m)
     
     distance_transform = fc.dialsDijkstra3D_Implicit(generate_sources(m2), obstacles, N, M, K)
-    blocked_voids_count = distance_transform.count(2147483647)
-    
-    filtered_distance_transform = [d for d in distance_transform if 0 < d < obstacle_id]
-    if len(filtered_distance_transform) == 0:
-        return np.iinfo(np.uint32).max, np.array(distance_transform).reshape((N, M, K)), blocked_voids_count
-    return np.mean(filtered_distance_transform) / 10, np.array(distance_transform).reshape((N, M, K)), blocked_voids_count
+    return distance_transform
 
-def fitness(m, c_count) -> float: 
+def fitness(m) -> float: 
+    """Returns:
+    Fitness, e1, e2, penalty, mssp, edt"""
+    mssp = eval2(m)
+    mssp = mssp[:-m.shape[1]*m.shape[2]]
+    mssp_mat = np.array(mssp).reshape(m.shape[0], m.shape[1], m.shape[2])
+    dead_c = np.where(mssp_mat == 2147483647)
+    edt = eval1(m)
+    edt[dead_c] = 0
+    
+    # e1
+    edt_nz = edt[edt != 0]
+    if len(edt_nz) == 0:
+        e1 = np.iinfo(np.uint32).max
+    else:
+        e1 = np.mean(edt_nz)
+        
+    # e2
+    obstacle_id = 2147483647-1
+    filtered_distance_transform = [d for d in mssp if 0 < d < obstacle_id]
+    if len(filtered_distance_transform) == 0:
+        e2 = np.iinfo(np.uint32).max
+    else:
+        e2 = np.mean(filtered_distance_transform) / 10
+    
+    # p
     penalty = 0
-    e1, _ = eval1(m)
-    e2, _, dead_c = eval2(m)
-    usable_c = c_count  - dead_c
+    usable_c = m.shape[0]*m.shape[1]*m.shape[2] - len(np.where(edt == 0)[0])
     if usable_c < math.ceil(m.shape[0]*m.shape[1]*m.shape[2]*0.35):
         penalty = (m.shape[0]*m.shape[1]*m.shape[2] - usable_c) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
     f = e1 + e2 + penalty
-    return f, e1, e2, penalty
+    return f, e1, e2, penalty, mssp_mat, edt, usable_c
 
 class TestDistanceCalc(unittest.TestCase):
-
-    def test_fitness_if_filled_matrix(self):
-        m = np.ones((5, 5, 5))
+    def test_edt_formation_orientation_horizontal_block(self):
+        m = np.ones((4,2,2))
         m[0, :, :] = 0
-        r = cuboid_mask(matrix=m,
-                    base_z=0,
-                    base_y=m.shape[1] // 2,
-                    base_x=m.shape[2] // 2,
-                    cuboid_depth=5,
-                    cuboid_height=5,
-                    cuboid_width=5,
-                    yaw=0,
-                    pitch=0,
-                    roll=0,
-                    taper_height=0 / 10,
-                    taper_width=0 / 10)
-        m[r] = 0
-        c = np.sum(m == 1)
-        f, e1, e2, p = fitness(m, c)
-        p = (m.shape[0]*m.shape[1]*m.shape[2] - c) + (m.shape[0]*m.shape[1]*m.shape[2] // 100)
-        self.assertEqual(f, np.iinfo(np.uint32).max*2 + p)
-    
-    def test_fitness_if_empty_matrix(self):
-        m = np.ones((5,5,5))
-        m[0, :, :] = 0
-        r = cuboid_mask(matrix=m,
-                    base_z=2,
-                    base_y=m.shape[1] // 2,
-                    base_x=m.shape[2] // 2,
-                    cuboid_depth=0,
-                    cuboid_height=0,
-                    cuboid_width=0,
-                    yaw=0,
-                    pitch=0,
-                    roll=0,
-                    taper_height=0 / 10,
-                    taper_width=0 / 10)
-        m[r] = 0
-        c = np.sum(m == 1)
-        f, _, _, _ = fitness(m, c)
-        self.assertEqual(f, (m.shape[0] / 2) * 2)
-    
-    def test_fitness_with_horizontal_blockage(self):
-        m = np.ones((5,5,5))
-        m[0, :, :] = 0
-        r = cuboid_mask(matrix=m,
-                    base_z=3,
-                    base_y=m.shape[1] // 2,
-                    base_x=m.shape[2] // 2,
-                    cuboid_depth=1,
-                    cuboid_height=5,
-                    cuboid_width=5,
-                    yaw=0,
-                    pitch=0,
-                    roll=0,
-                    taper_height=0 / 10,
-                    taper_width=0 / 10)
-        m[r] = 0
-        c = np.sum(m == 1)
-        f, e1, e2, p = fitness(m, c)
-        self.assertEqual(p, 101) #not 101.25 b/c int division 
-        self.assertEqual(e1, 1)
-        self.assertEqual(e2, 1)
-        self.assertEqual(f, 1 + 1 + 101)
-    
-    def test_fitness_with_vertical_blockage(self):
-        m = np.ones((5,5,5))
-        m[0, :, :] = 0
-        r = cuboid_mask(matrix=m,
-                    base_z=0,
-                    base_y=m.shape[1] // 2,
-                    base_x=m.shape[2] // 2,
-                    cuboid_depth=1,
-                    cuboid_height=5,
-                    cuboid_width=8,
-                    yaw=0,
-                    pitch=90,
-                    roll=0,
-                    taper_height=0 / 10,
-                    taper_width=0 / 10)
-        m[r] = 0
-        msspavg, _, _ = eval2(m)
-        self.assertEqual(msspavg, np.average(a=[4,3,2,1]))
+        m[2, :, :] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(np.array_equal(m[0, :, :], edt[0, :, :]))
+        # check if this subset which is normally a dist has been set to 0 due to obstruction (dead catalyst)
+        self.assertTrue(np.all(edt[1, :, :] == 0)) 
         
-    def test_location_of_obstacles(self):
-        m = np.ones((10, 10, 10))
+    def test_mssp_formation_orientation_horizontal_block(self):
+        m = np.ones((4,2,2))
         m[0, :, :] = 0
-        r = cuboid_mask(matrix=m,
-                    base_z=2,
-                    base_y=m.shape[1] // 2,
-                    base_x=m.shape[2] // 2,
-                    cuboid_depth=1,
-                    cuboid_height=10,
-                    cuboid_width=10,
-                    yaw=0,
-                    pitch=0,
-                    roll=0,
-                    taper_height=0 / 10,
-                    taper_width=0 / 10)
-        m[r] = 0
-        self.assertTrue(100 == np.sum(m[3, :, :]) and 0 == np.sum(m[2, :, :]))
+        m[2, :, :] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(np.all(mssp[0, :, :] == 2147483646)) # base, id
+        self.assertTrue(np.all(mssp[2, :, :] == 2147483646)) # obstruction, same as base
+        self.assertTrue(np.all(mssp[1, :, :] == 2147483647)) # dead catalyst, id
     
-    def test_value_of_blocked_voids(self):
-        m = np.ones((10, 10, 10))
+    def test_mssp_formation_orientation_diagonal_block(self):
+        m = np.ones((4,2,2))
         m[0, :, :] = 0
-        r = cuboid_mask(matrix=m,
-                    base_z=2,
-                    base_y=m.shape[1] // 2,
-                    base_x=m.shape[2] // 2,
-                    cuboid_depth=1,
-                    cuboid_height=10,
-                    cuboid_width=10,
-                    yaw=0,
-                    pitch=0,
-                    roll=0,
-                    taper_height=0 / 10,
-                    taper_width=0 / 10)
-        m[r] = 0
-        _, ddt, _ = eval2(m)
-        self.assertEqual(2147483647*m.shape[1]*m.shape[2], np.sum(ddt[1, :, :]))
-    
-    def test_value_of_obstacles(self):
-        m = np.ones((10, 10, 10))
+        m[2, 1, :] = 0
+        m[1, 0, :] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(np.all(mssp[0, :, :] == 2147483646)) # base, id
+        self.assertTrue(np.all(mssp[2, 1, :] == 2147483646)) # obstruction, same as base
+        self.assertTrue(np.all(mssp[1, 0, :] == 2147483646)) # obstruction, same as base
+        self.assertTrue(np.all(mssp[1, 1, :] == 34)) # goes through diagonal with path int(10*(sqrt(2) + 1 + 1)) = 34
+        
+    def test_edt_formation_orientation_diagonal_block(self):
+        m = np.ones((4,2,2))
         m[0, :, :] = 0
-        r = cuboid_mask(matrix=m,
-                    base_z=2,
-                    base_y=m.shape[1] // 2,
-                    base_x=m.shape[2] // 2,
-                    cuboid_depth=1,
-                    cuboid_height=10,
-                    cuboid_width=10,
-                    yaw=0,
-                    pitch=0,
-                    roll=0,
-                    taper_height=0 / 10,
-                    taper_width=0 / 10)
-        m[r] = 0
-        _, ddt, _ = eval2(m)
-        self.assertEqual(2147483646*m.shape[1]*m.shape[2], np.sum(ddt[2, :, :]))
+        m[2, 1, :] = 0
+        m[1, 0, :] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(np.all(edt[0, :, :] == 0)) # base, id
+        self.assertTrue(np.all(edt[2, 1, :] == 0)) # obstruction, same as base
+        self.assertTrue(np.all(edt[1, 0, :] == 0)) # obstruction, same as base. note: made 0 in post processing due to it being dead catalyst
+        self.assertTrue(np.all(edt[1, 1, :] == 1)) # blockages do not affect edt, included tests for comprehensiveness
+
+    def test_fitness_horizontal_block(self):
+        m = np.ones((4,2,2))
+        m[0, :, :] = 0
+        m[2, :, :] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(e1 == 1)
+        self.assertTrue(e2 == 1)
+        self.assertTrue(p == (m.shape[0]*m.shape[1]*m.shape[2] - c) + (m.shape[0]*m.shape[1]*m.shape[2] // 100))
+        self.assertTrue(f > e1 + e2)
+        self.assertTrue(c == 4)
+        self.assertTrue(f == 1 + 1 + 12)
+        
+    def test_c_count_horizontal_block(self):
+        m = np.ones((4,2,2))
+        m[0, :, :] = 0
+        m[2, :, :] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(c == 4)
     
+    def test_c_count_diagonal_block(self):
+        m = np.ones((4,2,2))
+        m[0, :, :] = 0
+        m[2, 1, :] = 0
+        m[1, 0, :] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(c == 8)
+    
+    def test_handling_full_space(self):
+        m = np.ones((4,2,2))
+        m[:, :, :] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(e1 == np.iinfo(np.uint32).max)
+        self.assertTrue(e2 == np.iinfo(np.uint32).max)
+        self.assertTrue(p == m.shape[0]*m.shape[1]*m.shape[2]) # c_usable is 0 and volume < 100 so int div is 0. hi future me, in case u look at this im right so dw abt it
+        
+    def test_old(self):
+        param = [41, 113, 119, 4, 0, 5, 0]
+        m = np.ones((61, 124, 124))
+        m[0, :, :] = 0
+        r = elliptical_cylinder_mask(
+            matrix=m,
+            base_z=0,
+            base_y=m.shape[1] // 2,
+            base_x=m.shape[2] // 2,
+            cylinder_length=param[0],
+            radius_y=param[1],
+            radius_x=param[2],
+            yaw=param[3],
+            pitch=param[4],
+            roll=0,
+            taper_z=param[5] / 10
+        )       
+        m[r] = 0
+        f, e1, e2, p, mssp, edt, c = fitness(m)
+        self.assertTrue(c > 0.35*m.shape[0]*m.shape[1]*m.shape[2])
 if __name__ == '__main__':
     unittest.main()
