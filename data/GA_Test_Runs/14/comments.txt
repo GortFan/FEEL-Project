@@ -1,0 +1,4 @@
+not bad but eval1 was off so I cant use these results.
+rerunning will likely give similar values (in terms of peak fitness, not morphology)
+
+also, discovered generations dont impact peak fitness (100 vs 200). 
