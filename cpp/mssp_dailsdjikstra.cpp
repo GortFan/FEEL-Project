@@ -119,6 +119,28 @@ std::vector<std::pair<int, int>> getNeighbors3D(int u, int N, int M, int K,
         if (nx < 0 || nx >= N || ny < 0 || ny >= M || nz < 0 || nz >= K) continue;
         int v = nx * M * K + ny * K + nz;
         if (obstacles.count(v)) continue;
+
+        int nonZeroCount = (dx != 0 ? 1 : 0) + (dy != 0 ? 1 : 0) + (dz != 0 ? 1 : 0);
+        if (nonZeroCount >= 2) {
+            int openPaths = 0;
+            
+            if (dx != 0) {
+                int intermediate = (x + dx) * M * K + y * K + z;
+                if (!obstacles.count(intermediate)) openPaths++;
+            }
+            if (dy != 0) {
+                int intermediate = x * M * K + (y + dy) * K + z;
+                if (!obstacles.count(intermediate)) openPaths++;
+            }
+            if (dz != 0) {
+                int intermediate = x * M * K + y * K + (z + dz);
+                if (!obstacles.count(intermediate)) openPaths++;
+            }
+            
+            if (nonZeroCount == 2 && openPaths < 1) continue; 
+            if (nonZeroCount == 3 && openPaths < 2) continue;
+        }
+
         neighbors.emplace_back(v, weight);
     }
     return neighbors;
